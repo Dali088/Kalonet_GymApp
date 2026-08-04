@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: kalonet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kalonet
+      POSTGRES_USER: kalonet
+      POSTGRES_PASSWORD: kalonet_local_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - kalonet_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U kalonet -d kalonet
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: kalonet-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  kalonet_postgres_data:

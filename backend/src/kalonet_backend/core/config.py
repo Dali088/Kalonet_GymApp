@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     docs_enabled: bool = True
 
+    database_url: str = "postgresql+psycopg://kalonet:kalonet_local_password@localhost:5433/kalonet"
+
     model_config = SettingsConfigDict(
         env_prefix="KALONET_",
         env_file=".env",
