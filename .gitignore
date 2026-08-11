@@ -23,6 +23,10 @@ backend/.venv/
 .DS_Store
 Thumbs.db
 
+# Local project docs and agent instructions
+/agents.md
+/docs/
+
 # Logs
 *.log
 
