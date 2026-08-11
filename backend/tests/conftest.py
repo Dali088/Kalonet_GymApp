@@ -1,11 +1,13 @@
 from collections.abc import Generator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from kalonet_backend.core.config import Settings
-from kalonet_backend.db.session import create_database_engine
+from kalonet_backend.db.session import create_database_engine, get_db_session
+from kalonet_backend.main import create_app
 
 
 @pytest.fixture
@@ -32,6 +34,7 @@ def db_session(
         bind=connection,
         autoflush=False,
         expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
     )
 
     try:
@@ -43,3 +46,28 @@ def db_session(
             transaction.rollback()
 
         connection.close()
+
+
+@pytest.fixture
+def client(
+    db_session: Session,
+) -> Generator[TestClient, None, None]:
+    """Provide a FastAPI client backed by the transactional test session."""
+
+    settings = Settings(
+        environment="test",
+        docs_enabled=False,
+        jwt_secret_key=("test-jwt-secret-key-containing-at-least-32-bytes"),
+        access_token_lifetime_seconds=900,
+        refresh_token_lifetime_days=30,
+    )
+
+    app = create_app(settings)
+
+    def override_db_session() -> Generator[Session, None, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db_session] = override_db_session
+
+    with TestClient(app) as test_client:
+        yield test_client

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String
+from sqlalchemy import CHAR, CheckConstraint, DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -17,6 +17,19 @@ class RefreshSession(TimestampMixin, Base):
         CheckConstraint(
             "expires_at > created_at",
             name="expires_after_creation",
+        ),
+        CheckConstraint(
+            "rotated_at IS NULL OR rotated_at >= created_at",
+            name="rotated_after_creation",
+        ),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= created_at",
+            name="revoked_after_creation",
+        ),
+        CheckConstraint(
+            "(revoked_at IS NULL AND revocation_reason IS NULL) "
+            "OR (revoked_at IS NOT NULL AND revocation_reason IS NOT NULL)",
+            name="revocation_reason_consistency",
         ),
         Index(
             "ix_refresh_sessions_user_id",
@@ -49,7 +62,7 @@ class RefreshSession(TimestampMixin, Base):
     )
 
     token_hash: Mapped[str] = mapped_column(
-        String(255),
+        CHAR(64),
         nullable=False,
         unique=True,
     )
@@ -75,17 +88,17 @@ class RefreshSession(TimestampMixin, Base):
         nullable=False,
     )
 
+    rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
 
-    replaced_by_session_id: Mapped[UUID | None] = mapped_column(
-        Uuid(as_uuid=True),
-        ForeignKey(
-            "refresh_sessions.id",
-            ondelete="SET NULL",
-            name="fk_refresh_sessions_replaced_by_session_id_refresh_sessions",
-        ),
+    revocation_reason: Mapped[str | None] = mapped_column(
+        String(40),
         nullable=True,
     )

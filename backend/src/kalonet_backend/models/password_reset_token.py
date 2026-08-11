@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String
+from sqlalchemy import CHAR, CheckConstraint, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -46,7 +46,7 @@ class PasswordResetToken(TimestampMixin, Base):
     )
 
     token_hash: Mapped[str] = mapped_column(
-        String(255),
+        CHAR(64),
         nullable=False,
         unique=True,
     )
@@ -56,7 +56,12 @@ class PasswordResetToken(TimestampMixin, Base):
         nullable=False,
     )
 
-    used_at: Mapped[datetime | None] = mapped_column(
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    invalidated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
