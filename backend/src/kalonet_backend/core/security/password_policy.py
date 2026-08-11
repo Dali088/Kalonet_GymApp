@@ -55,8 +55,6 @@ def validate_new_password(password: str) -> str:
         raise ValueError("Password must contain at least one non-whitespace character.")
 
     if is_common_or_breached_password(password):
-        raise ValueError(
-            "Password is too common or has appeared in a known data breach."
-        )
+        raise ValueError("Password is too common or has appeared in a known data breach.")
 
     return password
