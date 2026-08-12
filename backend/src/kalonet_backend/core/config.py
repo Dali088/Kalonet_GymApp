@@ -28,6 +28,11 @@ class Settings(BaseSettings):
         gt=0,
     )
 
+    smtp_host: str = "localhost"
+    smtp_port: int = Field(default=1025, gt=0, le=65535)
+    email_from: str = "no-reply@kalonet.local"
+    password_reset_link_scheme: str = "kalonet://password-reset"
+
     database_url: str = "postgresql+psycopg://kalonet:kalonet_local_password@localhost:5433/kalonet"
 
     model_config = SettingsConfigDict(

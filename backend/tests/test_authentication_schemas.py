@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from kalonet_backend.schemas.authentication import (
+    PasswordResetRequest,
     RegistrationRequest,
     SessionCreateRequest,
     SessionResponse,
@@ -84,6 +85,12 @@ def test_login_does_not_apply_new_password_policy() -> None:
     )
 
     assert request.password == "x"
+
+
+def test_password_reset_request_normalizes_email() -> None:
+    request = PasswordResetRequest(email="  Karim@Example.COM  ")
+
+    assert str(request.email) == "karim@example.com"
 
 
 def test_session_response_matches_contract_shape() -> None:

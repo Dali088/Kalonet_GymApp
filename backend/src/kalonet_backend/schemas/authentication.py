@@ -55,6 +55,55 @@ class SessionCreateRequest(BaseModel):
         return normalize_email_input(value)
 
 
+class RefreshTokenRequest(BaseModel):
+    """Request body for EP3 refresh-token rotation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    """Request body for EP3 logout."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: str
+
+
+class PasswordResetRequest(BaseModel):
+    """Request body for starting password recovery."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr = Field(max_length=320)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: object) -> object:
+        return normalize_email_input(value)
+
+
+class PasswordResetRequestResponse(BaseModel):
+    """Generic response that does not reveal account existence."""
+
+    message: str
+
+
+class PasswordResetCompletionRequest(BaseModel):
+    """Request body for completing password recovery."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reset_token: str = Field(min_length=1, max_length=512)
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_new_password(value)
+
+
 class SessionUserResponse(BaseModel):
     """Authenticated user data returned to Flutter."""
 

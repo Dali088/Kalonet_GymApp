@@ -25,6 +25,7 @@ Thumbs.db
 
 # Local project docs and agent instructions
 /agents.md
+!/AGENTS.md
 /docs/
 
 # Logs
