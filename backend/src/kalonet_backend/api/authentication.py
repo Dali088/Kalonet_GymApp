@@ -1,6 +1,6 @@
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Header, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -10,8 +10,20 @@ from kalonet_backend.api.rate_limit import (
     retry_after_headers,
 )
 from kalonet_backend.core.config import Settings, get_settings
+from kalonet_backend.core.security import (
+    AccessTokenClaims,
+    InvalidAccessTokenError,
+    decode_access_token,
+    hash_opaque_token,
+)
 from kalonet_backend.db.session import get_db_session
+from kalonet_backend.repositories import RefreshSessionRepository
 from kalonet_backend.schemas.authentication import (
+    LogoutRequest,
+    PasswordResetCompletionRequest,
+    PasswordResetRequest,
+    PasswordResetRequestResponse,
+    RefreshTokenRequest,
     RegistrationRequest,
     SessionCreateRequest,
     SessionResponse,
@@ -22,9 +34,18 @@ from kalonet_backend.services import (
     AuthenticationTokenService,
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
+    InvalidOrExpiredResetTokenError,
+    InvalidRefreshTokenError,
     LoginService,
+    LogoutService,
+    PasswordResetCompletionService,
+    PasswordResetRequestService,
+    RefreshTokenReuseDetectedError,
+    RefreshTokenService,
     RegistrationService,
+    SessionMismatchError,
 )
+from kalonet_backend.services.email import SmtpEmailSender
 
 router = APIRouter(
     prefix="/api/v1/auth",
@@ -56,6 +77,43 @@ def get_login_service(
     )
 
 
+def get_refresh_token_service(
+    session: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RefreshTokenService:
+    """Build the EP3 refresh-token rotation service."""
+
+    return RefreshTokenService(
+        session,
+        AuthenticationTokenService(settings),
+    )
+
+
+def get_logout_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> LogoutService:
+    """Build the EP3 logout service."""
+
+    return LogoutService(session)
+
+
+def get_password_reset_request_service(
+    session: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PasswordResetRequestService:
+    """Build the password-reset request service."""
+
+    return PasswordResetRequestService(session, SmtpEmailSender(settings))
+
+
+def get_password_reset_completion_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> PasswordResetCompletionService:
+    """Build the password-reset completion service."""
+
+    return PasswordResetCompletionService(session)
+
+
 def get_login_email_failure_rate_limiter(
     request: Request,
 ) -> SlidingWindowRateLimiter:
@@ -64,6 +122,78 @@ def get_login_email_failure_rate_limiter(
     return cast(
         SlidingWindowRateLimiter,
         request.app.state.login_email_failure_rate_limiter,
+    )
+
+
+def get_refresh_rate_limiter(
+    request: Request,
+) -> SlidingWindowRateLimiter:
+    """Return the shared refresh-token family limiter."""
+
+    return cast(
+        SlidingWindowRateLimiter,
+        request.app.state.refresh_rate_limiter,
+    )
+
+
+def get_password_reset_email_rate_limiter(
+    request: Request,
+) -> SlidingWindowRateLimiter:
+    """Return the shared reset limiter keyed by normalized email."""
+
+    return cast(
+        SlidingWindowRateLimiter,
+        request.app.state.password_reset_email_rate_limiter,
+    )
+
+
+def get_password_reset_token_rate_limiter(
+    request: Request,
+) -> SlidingWindowRateLimiter:
+    """Return the shared reset limiter keyed by token fingerprint."""
+
+    return cast(
+        SlidingWindowRateLimiter,
+        request.app.state.password_reset_token_rate_limiter,
+    )
+
+
+def _get_refresh_family_key(
+    session: Session,
+    refresh_token: str,
+) -> str | None:
+    """Resolve a known refresh token to its token-family limiter key."""
+
+    try:
+        token_hash = hash_opaque_token(refresh_token)
+    except ValueError:
+        return None
+
+    refresh_session = RefreshSessionRepository(session).get_by_token_hash(token_hash)
+
+    if refresh_session is None:
+        return None
+
+    return str(refresh_session.family_id)
+
+
+def _decode_bearer_access_token(
+    authorization: str | None,
+    settings: Settings,
+) -> AccessTokenClaims:
+    """Validate the HTTP bearer header and return trusted access claims."""
+
+    if authorization is None:
+        raise InvalidAccessTokenError
+
+    parts = authorization.split()
+
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise InvalidAccessTokenError
+
+    return decode_access_token(
+        parts[1],
+        secret_key=settings.jwt_secret_key.get_secret_value(),
     )
 
 
@@ -162,3 +292,184 @@ def login_account(
         )
 
     return _to_session_response(result)
+
+
+@router.post(
+    "/token-refreshes",
+    response_model=SessionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def refresh_session(
+    payload: RefreshTokenRequest,
+    request: Request,
+    session: Annotated[Session, Depends(get_db_session)],
+    service: Annotated[
+        RefreshTokenService,
+        Depends(get_refresh_token_service),
+    ],
+    rate_limiter: Annotated[
+        SlidingWindowRateLimiter,
+        Depends(get_refresh_rate_limiter),
+    ],
+) -> SessionResponse | JSONResponse:
+    """EP3: rotate a valid refresh token and issue its replacement."""
+
+    family_key = _get_refresh_family_key(session, payload.refresh_token)
+
+    if family_key is not None:
+        decision = rate_limiter.allow(family_key)
+
+        if not decision.allowed:
+            return build_error_response(
+                request=request,
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                code="rate_limit_exceeded",
+                message="Too many refresh attempts. Please try again later.",
+                headers=retry_after_headers(decision),
+            )
+
+    try:
+        result = service.rotate(refresh_token=payload.refresh_token)
+
+    except RefreshTokenReuseDetectedError:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="refresh_token_reuse_detected",
+            message="The refresh token was already used and its token family was revoked.",
+        )
+
+    except InvalidRefreshTokenError:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="invalid_refresh_token",
+            message="The refresh token is invalid or expired.",
+        )
+
+    return _to_session_response(result)
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+def logout_current_session(
+    payload: LogoutRequest,
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    service: Annotated[LogoutService, Depends(get_logout_service)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> Response | JSONResponse:
+    """EP3: revoke the authenticated refresh session."""
+
+    try:
+        claims = _decode_bearer_access_token(authorization, settings)
+    except InvalidAccessTokenError:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="invalid_access_token",
+            message="The access token is missing or invalid.",
+        )
+
+    try:
+        service.logout(
+            user_id=claims.user_id,
+            session_id=claims.session_id,
+            refresh_token=payload.refresh_token,
+        )
+    except SessionMismatchError:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="session_mismatch",
+            message="The refresh token does not belong to the authenticated session.",
+        )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/password-reset-requests",
+    response_model=PasswordResetRequestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def request_password_reset(
+    payload: PasswordResetRequest,
+    request: Request,
+    service: Annotated[
+        PasswordResetRequestService,
+        Depends(get_password_reset_request_service),
+    ],
+    email_rate_limiter: Annotated[
+        SlidingWindowRateLimiter,
+        Depends(get_password_reset_email_rate_limiter),
+    ],
+) -> PasswordResetRequestResponse | JSONResponse:
+    """EP1 authentication support: start password recovery generically."""
+
+    decision = email_rate_limiter.allow(str(payload.email))
+
+    if not decision.allowed:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="rate_limit_exceeded",
+            message="Too many password-reset requests. Please try again later.",
+            headers=retry_after_headers(decision),
+        )
+
+    service.request(email=str(payload.email))
+
+    return PasswordResetRequestResponse(
+        message=("If an account exists for that email, password-reset instructions will be sent.")
+    )
+
+
+@router.post(
+    "/password-resets",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+def complete_password_reset(
+    payload: PasswordResetCompletionRequest,
+    request: Request,
+    service: Annotated[
+        PasswordResetCompletionService,
+        Depends(get_password_reset_completion_service),
+    ],
+    token_rate_limiter: Annotated[
+        SlidingWindowRateLimiter,
+        Depends(get_password_reset_token_rate_limiter),
+    ],
+) -> Response | JSONResponse:
+    """Consume a reset token and atomically change the password."""
+
+    token_fingerprint = hash_opaque_token(payload.reset_token)
+    decision = token_rate_limiter.allow(token_fingerprint)
+
+    if not decision.allowed:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="rate_limit_exceeded",
+            message="Too many password-reset attempts. Please try again later.",
+            headers=retry_after_headers(decision),
+        )
+
+    try:
+        service.complete(
+            reset_token=payload.reset_token,
+            new_password=payload.new_password,
+        )
+    except InvalidOrExpiredResetTokenError:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="invalid_or_expired_reset_token",
+            message="The password-reset token is invalid, expired, or already used.",
+        )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

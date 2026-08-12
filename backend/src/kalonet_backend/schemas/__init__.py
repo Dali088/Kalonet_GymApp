@@ -1,4 +1,9 @@
 from kalonet_backend.schemas.authentication import (
+    LogoutRequest,
+    PasswordResetCompletionRequest,
+    PasswordResetRequest,
+    PasswordResetRequestResponse,
+    RefreshTokenRequest,
     RegistrationRequest,
     SessionCreateRequest,
     SessionResponse,
@@ -6,7 +11,12 @@ from kalonet_backend.schemas.authentication import (
 )
 
 __all__ = [
+    "LogoutRequest",
+    "PasswordResetCompletionRequest",
+    "PasswordResetRequest",
+    "PasswordResetRequestResponse",
     "RegistrationRequest",
+    "RefreshTokenRequest",
     "SessionCreateRequest",
     "SessionResponse",
     "SessionUserResponse",

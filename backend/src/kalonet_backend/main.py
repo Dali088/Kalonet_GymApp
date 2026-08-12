@@ -75,6 +75,22 @@ def create_app(
         limit=5,
         window=timedelta(minutes=15),
     )
+    app.state.refresh_rate_limiter = SlidingWindowRateLimiter(
+        limit=30,
+        window=timedelta(minutes=5),
+    )
+    app.state.password_reset_ip_rate_limiter = SlidingWindowRateLimiter(
+        limit=10,
+        window=timedelta(hours=1),
+    )
+    app.state.password_reset_email_rate_limiter = SlidingWindowRateLimiter(
+        limit=3,
+        window=timedelta(hours=1),
+    )
+    app.state.password_reset_token_rate_limiter = SlidingWindowRateLimiter(
+        limit=5,
+        window=timedelta(minutes=15),
+    )
 
     @app.middleware("http")
     async def enforce_authentication_rate_limits(
@@ -95,6 +111,14 @@ def create_app(
             limiter = cast(
                 SlidingWindowRateLimiter,
                 request.app.state.login_ip_rate_limiter,
+            )
+        elif request.url.path in {
+            "/api/v1/auth/password-reset-requests",
+            "/api/v1/auth/password-resets",
+        }:
+            limiter = cast(
+                SlidingWindowRateLimiter,
+                request.app.state.password_reset_ip_rate_limiter,
             )
         else:
             return await call_next(request)

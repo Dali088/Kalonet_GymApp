@@ -18,17 +18,23 @@ from kalonet_backend.core.security.refresh_tokens import (
     hash_opaque_token,
     issue_refresh_token,
 )
+from kalonet_backend.core.security.reset_tokens import (
+    IssuedResetToken,
+    issue_reset_token,
+)
 
 __all__ = [
     "AccessTokenClaims",
     "InvalidAccessTokenError",
     "IssuedRefreshToken",
+    "IssuedResetToken",
     "create_access_token",
     "decode_access_token",
     "hash_opaque_token",
     "hash_password",
     "is_common_or_breached_password",
     "issue_refresh_token",
+    "issue_reset_token",
     "validate_new_password",
     "verify_password",
     "verify_password_for_login",
