@@ -1,0 +1,22 @@
+# The local virtual environment is platform-specific and must be rebuilt inside
+# the Linux image rather than copied from Windows.
+.venv
+
+# Python-generated caches are not application inputs and would make the build
+# context larger and less reproducible.
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Local coverage output is test evidence, not runtime application content.
+.coverage
+
+# Environment files can contain secrets and must never enter an image build.
+.env
+
+# Git metadata is not needed to run the application and should not be packaged.
+.git
+
+# Tests belong in CI, not in the production runtime artifact.
+tests

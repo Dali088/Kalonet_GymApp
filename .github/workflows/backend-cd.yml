@@ -1,0 +1,92 @@
+name: Backend CD - Build and store image
+
+on:
+  # Start delivery only after the existing CI workflow finishes on main.
+  workflow_run:
+    workflows:
+      - Backend CI
+    types:
+      - completed
+    branches:
+      - main
+
+# The workflow reads repository contents and publishes only to GHCR.
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # GHCR is GitHub's OCI-compatible container registry.
+  REGISTRY: ghcr.io
+
+  # Container references must be lowercase; this is the lowercase form of the
+  # Kalonet repository owner and the project-specific backend image name.
+  IMAGE_NAME: dali088/kalonet-backend
+
+  # workflow_run provides the exact commit tested by CI.
+  IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
+
+jobs:
+  deliver-image:
+    # A failed CI workflow must never produce a delivered image.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out the exact revision that the successful CI run tested.
+      - name: Check out the verified revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.IMAGE_SHA }}
+
+      # Authenticate Docker to GHCR using GitHub's short-lived workflow token.
+      # The token is supplied through stdin so it is not placed in shell args.
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login "$REGISTRY" \
+            --username "$GITHUB_ACTOR" \
+            --password-stdin
+
+      # Build once from the repository Dockerfile. Development dependencies
+      # are already excluded by the Dockerfile's production uv sync.
+      - name: Build the release image
+        run: |
+          docker build \
+            --file backend/Dockerfile \
+            --tag "$REGISTRY/$IMAGE_NAME:sha-$IMAGE_SHA" \
+            backend
+
+      # Verify the built artifact before publishing it. This is a local
+      # container smoke test, not a deployment to another environment.
+      - name: Smoke-test the release image
+        run: |
+          container_name="kalonet-cd-smoke"
+          image_ref="$REGISTRY/$IMAGE_NAME:sha-$IMAGE_SHA"
+
+          cleanup() {
+            docker rm --force "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run \
+            --detach \
+            --name "$container_name" \
+            --publish 18000:8000 \
+            "$image_ref"
+
+          for attempt in {1..15}; do
+            if curl --fail --silent --show-error http://127.0.0.1:18000/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs "$container_name"
+          exit 1
+
+      # Store only the verified image. The commit-SHA tag is immutable in our
+      # convention and lets us identify exactly which source produced it.
+      - name: Push the verified image to GHCR
+        run: docker push "$REGISTRY/$IMAGE_NAME:sha-$IMAGE_SHA"

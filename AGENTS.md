@@ -117,9 +117,9 @@ Kalonet is in Sprint 1 authentication implementation. The authentication foundat
 
 **Current password-reset implementation:** the approved `POST /api/v1/auth/password-resets` completion flow now locks and consumes one reset token, updates the password, revokes active refresh sessions with reason `password_reset`, and commits those changes atomically. Request and completion flows are verified.
 
-**Exact next task:** run the remaining Sprint 1 authentication test/CI gate and prepare the verified checkpoint. Do not begin onboarding implementation until this gate is complete.
+**Current implementation checkpoint:** the Sprint 1 authentication test/CI gate has been completed locally and the authentication milestone is merged into `main`. The artifact-only CD files are now present on the active development branch. The next bounded task is to commit/push the CD files and verify the first GitHub Actions delivery run before beginning onboarding implementation.
 
-Continuous delivery is planned after the backend MVP and stable CI, with staging delivery and an explicit approval gate before any later production deployment. Do not add deployment automation while the hosting target, environment secrets, migration policy, health checks, observability, and rollback strategy remain undecided.
+Continuous delivery is approved as artifact-only delivery: build, smoke-test, and store a versioned Docker/OCI image in GitHub Container Registry. It does not deploy the application. Do not add deployment automation, hosting configuration, or production secrets. The first GitHub run is still required to verify the workflow and registry permissions.
 
 ## Contract discipline
 
