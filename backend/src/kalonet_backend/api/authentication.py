@@ -1,9 +1,10 @@
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from kalonet_backend.api.dependencies import get_current_access_token_claims
 from kalonet_backend.api.errors import build_error_response
 from kalonet_backend.api.rate_limit import (
     SlidingWindowRateLimiter,
@@ -12,8 +13,6 @@ from kalonet_backend.api.rate_limit import (
 from kalonet_backend.core.config import Settings, get_settings
 from kalonet_backend.core.security import (
     AccessTokenClaims,
-    InvalidAccessTokenError,
-    decode_access_token,
     hash_opaque_token,
 )
 from kalonet_backend.db.session import get_db_session
@@ -29,15 +28,19 @@ from kalonet_backend.schemas.authentication import (
     SessionResponse,
     SessionUserResponse,
 )
+from kalonet_backend.schemas.personalization import PasswordChangeRequest
 from kalonet_backend.services import (
     AuthenticationSessionResult,
     AuthenticationTokenService,
+    CurrentPasswordIncorrectError,
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
     InvalidOrExpiredResetTokenError,
     InvalidRefreshTokenError,
     LoginService,
     LogoutService,
+    NewPasswordMatchesCurrentError,
+    PasswordChangeService,
     PasswordResetCompletionService,
     PasswordResetRequestService,
     RefreshTokenReuseDetectedError,
@@ -158,6 +161,18 @@ def get_password_reset_token_rate_limiter(
     )
 
 
+def get_password_change_rate_limiter(request: Request) -> SlidingWindowRateLimiter:
+    """Return the authenticated password-change limiter."""
+
+    return cast(SlidingWindowRateLimiter, request.app.state.password_change_rate_limiter)
+
+
+def get_password_change_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> PasswordChangeService:
+    return PasswordChangeService(session)
+
+
 def _get_refresh_family_key(
     session: Session,
     refresh_token: str,
@@ -175,26 +190,6 @@ def _get_refresh_family_key(
         return None
 
     return str(refresh_session.family_id)
-
-
-def _decode_bearer_access_token(
-    authorization: str | None,
-    settings: Settings,
-) -> AccessTokenClaims:
-    """Validate the HTTP bearer header and return trusted access claims."""
-
-    if authorization is None:
-        raise InvalidAccessTokenError
-
-    parts = authorization.split()
-
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise InvalidAccessTokenError
-
-    return decode_access_token(
-        parts[1],
-        secret_key=settings.jwt_secret_key.get_secret_value(),
-    )
 
 
 def _to_session_response(
@@ -358,21 +353,10 @@ def refresh_session(
 def logout_current_session(
     payload: LogoutRequest,
     request: Request,
-    settings: Annotated[Settings, Depends(get_settings)],
     service: Annotated[LogoutService, Depends(get_logout_service)],
-    authorization: Annotated[str | None, Header()] = None,
+    claims: Annotated[AccessTokenClaims, Depends(get_current_access_token_claims)],
 ) -> Response | JSONResponse:
     """EP3: revoke the authenticated refresh session."""
-
-    try:
-        claims = _decode_bearer_access_token(authorization, settings)
-    except InvalidAccessTokenError:
-        return build_error_response(
-            request=request,
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            code="invalid_access_token",
-            message="The access token is missing or invalid.",
-        )
 
     try:
         service.logout(
@@ -470,6 +454,55 @@ def complete_password_reset(
             status_code=status.HTTP_400_BAD_REQUEST,
             code="invalid_or_expired_reset_token",
             message="The password-reset token is invalid, expired, or already used.",
+        )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/password-changes",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+def change_password(
+    payload: PasswordChangeRequest,
+    request: Request,
+    claims: Annotated[AccessTokenClaims, Depends(get_current_access_token_claims)],
+    service: Annotated[PasswordChangeService, Depends(get_password_change_service)],
+    rate_limiter: Annotated[
+        SlidingWindowRateLimiter,
+        Depends(get_password_change_rate_limiter),
+    ],
+) -> Response | JSONResponse:
+    decision = rate_limiter.allow(str(claims.user_id))
+    if not decision.allowed:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="rate_limit_exceeded",
+            message="Too many password-change attempts. Please try again later.",
+            headers=retry_after_headers(decision),
+        )
+
+    try:
+        service.change(
+            user_id=claims.user_id,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except CurrentPasswordIncorrectError:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="current_password_incorrect",
+            message="The current password is incorrect.",
+        )
+    except NewPasswordMatchesCurrentError:
+        return build_error_response(
+            request=request,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="new_password_matches_current",
+            message="The new password must differ from the current password.",
         )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
