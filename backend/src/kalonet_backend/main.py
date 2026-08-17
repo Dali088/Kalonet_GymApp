@@ -20,6 +20,7 @@ from kalonet_backend.api.rate_limit import (
     SlidingWindowRateLimiter,
     retry_after_headers,
 )
+from kalonet_backend.api.tracking import router as tracking_router
 from kalonet_backend.api.users import router as users_router
 from kalonet_backend.core.config import Settings, get_settings
 from kalonet_backend.core.security import InvalidAccessTokenError
@@ -27,6 +28,7 @@ from kalonet_backend.db.session import (
     create_database_engine,
     create_session_factory,
 )
+from kalonet_backend.services.food_provider import OpenFoodFactsProvider
 
 
 def create_app(
@@ -106,6 +108,7 @@ def create_app(
         limit=3,
         window=timedelta(hours=1),
     )
+    app.state.food_provider = OpenFoodFactsProvider(resolved_settings)
 
     @app.middleware("http")
     async def enforce_authentication_rate_limits(
@@ -155,6 +158,7 @@ def create_app(
     app.include_router(health_router)
     app.include_router(authentication_router)
     app.include_router(users_router)
+    app.include_router(tracking_router)
 
     return app
 

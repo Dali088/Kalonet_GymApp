@@ -19,6 +19,13 @@ from kalonet_backend.services.authentication_tokens import (
     AuthenticationTokenService,
     IssuedSessionTokens,
 )
+from kalonet_backend.services.food_provider import (
+    FoodProduct,
+    FoodProviderInvalidResponseError,
+    FoodProviderRateLimitedError,
+    FoodProviderUnavailableError,
+    OpenFoodFactsProvider,
+)
 from kalonet_backend.services.nutrition import (
     NutritionCalculationInputs,
     NutritionCalculationResult,
@@ -48,6 +55,16 @@ from kalonet_backend.services.password_reset_completion import (
 )
 from kalonet_backend.services.password_reset_request import PasswordResetRequestService
 from kalonet_backend.services.settings import InvalidTimeZoneError, SettingsService
+from kalonet_backend.services.tracking import (
+    ActiveNutritionTargetNotFoundError,
+    ActivityNotFoundError,
+    FutureDateNotAllowedError,
+    MealItemNotFoundError,
+    MealNotFoundError,
+    OnboardingRequiredError,
+    TrackingService,
+    WaterEntryNotFoundError,
+)
 
 __all__ = [
     "AuthenticationSessionResult",
@@ -85,4 +102,17 @@ __all__ = [
     "UserNotFoundError",
     "InvalidTimeZoneError",
     "SettingsService",
+    "FoodProduct",
+    "FoodProviderInvalidResponseError",
+    "FoodProviderRateLimitedError",
+    "FoodProviderUnavailableError",
+    "OpenFoodFactsProvider",
+    "ActiveNutritionTargetNotFoundError",
+    "ActivityNotFoundError",
+    "FutureDateNotAllowedError",
+    "MealItemNotFoundError",
+    "MealNotFoundError",
+    "OnboardingRequiredError",
+    "TrackingService",
+    "WaterEntryNotFoundError",
 ]
