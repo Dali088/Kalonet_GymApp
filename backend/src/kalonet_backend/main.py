@@ -12,6 +12,7 @@ from kalonet_backend.api.authentication import (
 )
 from kalonet_backend.api.errors import (
     build_error_response,
+    invalid_access_token_error_handler,
     request_validation_error_handler,
 )
 from kalonet_backend.api.health import router as health_router
@@ -19,7 +20,9 @@ from kalonet_backend.api.rate_limit import (
     SlidingWindowRateLimiter,
     retry_after_headers,
 )
+from kalonet_backend.api.users import router as users_router
 from kalonet_backend.core.config import Settings, get_settings
+from kalonet_backend.core.security import InvalidAccessTokenError
 from kalonet_backend.db.session import (
     create_database_engine,
     create_session_factory,
@@ -56,6 +59,10 @@ def create_app(
         RequestValidationError,
         request_validation_error_handler,
     )
+    app.add_exception_handler(
+        InvalidAccessTokenError,
+        invalid_access_token_error_handler,
+    )
 
     def provide_settings() -> Settings:
         return resolved_settings
@@ -90,6 +97,14 @@ def create_app(
     app.state.password_reset_token_rate_limiter = SlidingWindowRateLimiter(
         limit=5,
         window=timedelta(minutes=15),
+    )
+    app.state.password_change_rate_limiter = SlidingWindowRateLimiter(
+        limit=5,
+        window=timedelta(hours=1),
+    )
+    app.state.account_deletion_rate_limiter = SlidingWindowRateLimiter(
+        limit=3,
+        window=timedelta(hours=1),
     )
 
     @app.middleware("http")
@@ -139,6 +154,7 @@ def create_app(
 
     app.include_router(health_router)
     app.include_router(authentication_router)
+    app.include_router(users_router)
 
     return app
 

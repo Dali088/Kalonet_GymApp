@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from kalonet_backend.api.request_context import get_request_id
+from kalonet_backend.core.security import InvalidAccessTokenError
 from kalonet_backend.schemas.errors import (
     ErrorBody,
     ErrorDetail,
@@ -36,6 +37,23 @@ def build_error_response(
         status_code=status_code,
         content=response.model_dump(mode="json"),
         headers=headers,
+    )
+
+
+async def invalid_access_token_error_handler(
+    request: Request,
+    exception: Exception,
+) -> JSONResponse:
+    """Translate protected-route authentication failures into Kalonet errors."""
+
+    if not isinstance(exception, InvalidAccessTokenError):
+        raise exception
+
+    return build_error_response(
+        request=request,
+        status_code=401,
+        code="invalid_access_token",
+        message="The access token is missing or invalid.",
     )
 
 

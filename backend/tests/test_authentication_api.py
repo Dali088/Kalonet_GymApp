@@ -368,6 +368,32 @@ def test_logout_rejects_missing_or_invalid_access_tokens(
     assert error["request_id"]
 
 
+def test_logout_rejects_malformed_access_header(
+    client,
+) -> None:
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": "Basic not-a-bearer-token"},
+        json={"refresh_token": "not-a-refresh-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_access_token"
+
+
+def test_logout_rejects_invalid_access_token(
+    client,
+) -> None:
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": "Bearer not-a-jwt"},
+        json={"refresh_token": "not-a-refresh-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_access_token"
+
+
 def test_logout_rejects_a_refresh_token_from_another_session(
     client,
 ) -> None:

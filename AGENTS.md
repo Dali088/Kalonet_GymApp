@@ -93,7 +93,7 @@ State briefly why the current step exists now and what it unlocks.
 
 ## Current exact checkpoint
 
-Kalonet is in Sprint 1 authentication implementation. The authentication foundation has been merged into `main` through pull request #2. The active development branch is `develop`.
+Kalonet has completed Sprint 1 authentication and Sprint 2 onboarding/targets/profile implementation locally. The active development branch is `develop`; do not merge or push on the learner's behalf.
 
 - Request/response schemas.
 - Email normalization.
@@ -117,9 +117,9 @@ Kalonet is in Sprint 1 authentication implementation. The authentication foundat
 
 **Current password-reset implementation:** the approved `POST /api/v1/auth/password-resets` completion flow now locks and consumes one reset token, updates the password, revokes active refresh sessions with reason `password_reset`, and commits those changes atomically. Request and completion flows are verified.
 
-**Current implementation checkpoint:** the Sprint 1 authentication test/CI gate has been completed locally and the authentication milestone is merged into `main`. The artifact-only CD files are now present on the active development branch. The next bounded task is to commit/push the CD files and verify the first GitHub Actions delivery run before beginning onboarding implementation.
+**Current implementation checkpoint:** Sprint 1 authentication and Sprint 2 onboarding/targets/profile are complete locally on `develop`. Sprint 2 added four application tables and all approved personalization/settings/security endpoints; the final local gate passed with 116 PostgreSQL-backed tests twice, Ruff, strict mypy, and Alembic parity. The next bounded task is Sprint 3 backend tracking and the MVP API gate.
 
-Continuous delivery is approved as artifact-only delivery: build, smoke-test, and store a versioned Docker/OCI image in GitHub Container Registry. It does not deploy the application. Do not add deployment automation, hosting configuration, or production secrets. The first GitHub run is still required to verify the workflow and registry permissions.
+Continuous delivery is approved and verified as artifact-only delivery: build, smoke-test, and store a versioned Docker/OCI image in GitHub Container Registry. It does not deploy the application. Do not add deployment automation, hosting configuration, or production secrets. The first GitHub run succeeded; future changes must preserve the CI-success prerequisite and artifact-only boundary.
 
 ## Contract discipline
 

@@ -13,6 +13,7 @@ from kalonet_backend.models import User
 from kalonet_backend.repositories import (
     RefreshSessionRepository,
     UserRepository,
+    UserSettingsRepository,
 )
 from kalonet_backend.services.authentication_tokens import (
     AuthenticationTokenService,
@@ -87,6 +88,7 @@ class RegistrationService:
         self._token_service = token_service
         self._users = UserRepository(session)
         self._refresh_sessions = RefreshSessionRepository(session)
+        self._settings = UserSettingsRepository(session)
 
     def register(
         self,
@@ -104,6 +106,7 @@ class RegistrationService:
                 email=email,
                 password_hash=hash_password(password),
             )
+            self._settings.get_or_create(user.id)
 
             result = _create_authenticated_session(
                 token_service=self._token_service,
