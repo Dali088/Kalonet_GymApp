@@ -78,6 +78,7 @@ def test_sprint3_tracking_crud_and_dashboard(client) -> None:
     assert created.status_code == 201
     meal = created.json()
     assert meal["totals"]["calories_kcal"] == 500
+    assert isinstance(meal["items"][0]["quantity"], (int, float))
 
     replay = client.post(
         "/api/v1/users/me/meals",
@@ -124,6 +125,16 @@ def test_sprint3_tracking_crud_and_dashboard(client) -> None:
         },
     )
     assert activity.status_code == 201
+    assert isinstance(activity.json()["estimated_calories_kcal"], (int, float))
+
+    activities = client.get(
+        "/api/v1/users/me/activities",
+        headers=headers,
+        params={"date": "2026-08-10"},
+    )
+    assert activities.status_code == 200
+    assert isinstance(activities.json()["items"][0]["estimated_calories_kcal"], (int, float))
+    assert isinstance(activities.json()["totals"]["estimated_calories_kcal"], (int, float))
 
     dashboard = client.get(
         "/api/v1/users/me/daily-dashboard",
@@ -134,6 +145,7 @@ def test_sprint3_tracking_crud_and_dashboard(client) -> None:
     assert dashboard.json()["meals"]["logged_item_count"] == 1
     assert dashboard.json()["water"]["consumed_ml"] == 500
     assert dashboard.json()["steps"]["count"] == 6420
+    assert isinstance(dashboard.json()["activity"]["estimated_calories_kcal"], (int, float))
 
     listed = client.get("/api/v1/users/me/meals", headers=headers, params={"date": "2026-08-10"})
     assert listed.status_code == 200

@@ -34,14 +34,15 @@ def create_reset_fixture(db_session: Session) -> tuple[User, str, datetime]:
         token_hash=hash_opaque_token(plain_token),
         expires_at=now + timedelta(minutes=30),
     )
-    RefreshSessionRepository(db_session).create(
+    refresh_session = RefreshSessionRepository(db_session).create(
         session_id=uuid4(),
         user_id=user.id,
         token_hash="a" * 64,
         family_id=uuid4(),
         expires_at=now + timedelta(days=30),
     )
-    return user, plain_token, now
+    # Use the database-generated creation time for deterministic lifecycle assertions.
+    return user, plain_token, refresh_session.created_at
 
 
 def test_completion_changes_password_consumes_token_and_revokes_sessions(

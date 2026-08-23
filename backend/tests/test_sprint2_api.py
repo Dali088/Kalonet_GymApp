@@ -58,6 +58,8 @@ def test_onboarding_profile_target_and_settings_flow(client) -> None:
     assert draft.status_code == 200
     assert draft.json()["status"] == "in_progress"
     assert draft.json()["missing_fields"] == []
+    assert isinstance(draft.json()["measurements"]["height_cm"], (int, float))
+    assert isinstance(draft.json()["measurements"]["weight_kg"], (int, float))
 
     preview = client.post(
         "/api/v1/users/me/nutrition-target-previews",
@@ -65,6 +67,8 @@ def test_onboarding_profile_target_and_settings_flow(client) -> None:
     )
     assert preview.status_code == 200
     assert preview.json()["target"]["is_active"] is False
+    assert isinstance(preview.json()["inputs"]["height_cm"], (int, float))
+    assert isinstance(preview.json()["inputs"]["weight_kg"], (int, float))
 
     completion = client.post(
         "/api/v1/users/me/onboarding-completions",
@@ -84,6 +88,9 @@ def test_onboarding_profile_target_and_settings_flow(client) -> None:
     profile = client.get("/api/v1/users/me/profile", headers=headers)
     assert profile.status_code == 200
     assert profile.json()["calculation_inputs"]["goal"] == "weight_loss"
+    assert profile.json()["user"]["onboarding_completed_at"]
+    assert isinstance(profile.json()["calculation_inputs"]["height_cm"], (int, float))
+    assert isinstance(profile.json()["calculation_inputs"]["weight_kg"], (int, float))
 
     recalculation = client.post(
         "/api/v1/users/me/nutrition-target-recalculations",

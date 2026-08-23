@@ -414,8 +414,14 @@ def get_profile(
         assert profile.goal is not None
         assert profile.sex_for_formula is not None
         assert profile.activity_level is not None
+        assert user.onboarding_completed_at is not None
         return ProfileResponse(
-            user=ProfileUserResponse(id=str(user.id), email=user.email, onboarding_completed=True),
+            user=ProfileUserResponse(
+                id=str(user.id),
+                email=user.email,
+                onboarding_completed=True,
+                onboarding_completed_at=user.onboarding_completed_at,
+            ),
             calculation_inputs=ProfileCalculationInputs(
                 goal=cast(Goal, profile.goal),
                 date_of_birth=profile.date_of_birth,

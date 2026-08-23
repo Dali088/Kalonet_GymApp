@@ -208,12 +208,13 @@ def test_refresh_session_repository_revokes_only_active_family_sessions(
         family_id=family_id,
         expires_at=expires_at,
     )
-    rotated_session.rotated_at = datetime.now(UTC)
+    rotated_session.rotated_at = rotated_session.created_at + timedelta(seconds=1)
     db_session.flush()
 
+    revoked_at = max(active_session.created_at, rotated_session.created_at) + timedelta(seconds=1)
     revoked_count = session_repository.revoke_active_family(
         family_id=family_id,
-        revoked_at=datetime.now(UTC),
+        revoked_at=revoked_at,
         revocation_reason="token_reuse",
     )
 

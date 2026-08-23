@@ -76,7 +76,10 @@ def test_logout_is_repeatable_for_an_already_revoked_session(
     db_session: Session,
 ) -> None:
     _, user, refresh_session, issued_tokens = create_logout_fixture(db_session)
-    logout_service = LogoutService(db_session)
+    logout_service = LogoutService(
+        db_session,
+        clock=lambda: refresh_session.created_at + timedelta(seconds=1),
+    )
 
     logout_service.logout(
         user_id=user.id,
