@@ -114,6 +114,12 @@ class MealItemResponse(BaseModel):
     serving_description: str
     nutrition: NutritionValues
 
+    @field_serializer("quantity")
+    def serialize_quantity(self, value: Decimal) -> float:
+        """Expose persisted quantities as JSON numbers for client parsing."""
+
+        return float(value)
+
 
 class MealResponse(BaseModel):
     id: UUID
@@ -232,10 +238,20 @@ class ActivityResponse(BaseModel):
     estimated_calories_kcal: Decimal | None
     recorded_at: datetime
 
+    @field_serializer("estimated_calories_kcal")
+    def serialize_estimated_calories(self, value: Decimal | None) -> float | None:
+        """Expose optional calorie estimates as JSON numbers."""
+
+        return None if value is None else float(value)
+
 
 class ActivityTotals(BaseModel):
     duration_minutes: int
     estimated_calories_kcal: Decimal
+
+    @field_serializer("estimated_calories_kcal")
+    def serialize_estimated_calories(self, value: Decimal) -> float:
+        return float(value)
 
 
 class ActivityListResponse(BaseModel):
@@ -276,6 +292,10 @@ class DashboardActivity(BaseModel):
     activity_count: int
     duration_minutes: int
     estimated_calories_kcal: Decimal
+
+    @field_serializer("estimated_calories_kcal")
+    def serialize_estimated_calories(self, value: Decimal) -> float:
+        return float(value)
 
 
 class DailyDashboardResponse(BaseModel):

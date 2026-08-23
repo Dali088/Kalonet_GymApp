@@ -2,7 +2,14 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 Goal = Literal["weight_loss", "maintain_weight", "weight_gain"]
 SexForFormula = Literal["male", "female"]
@@ -33,6 +40,12 @@ class Measurements(BaseModel):
     sex_for_formula: SexForFormula
     height_cm: Decimal = Field(ge=Decimal("120"), le=Decimal("230"))
     weight_kg: Decimal = Field(ge=Decimal("35"), le=Decimal("300"))
+
+    @field_serializer("height_cm", "weight_kg")
+    def serialize_decimal(self, value: Decimal) -> float:
+        """Expose measurement decimals as JSON numbers in the API contract."""
+
+        return float(value)
 
 
 class MealScheduleInput(BaseModel):
@@ -102,6 +115,12 @@ class PreviewInputs(BaseModel):
     weight_kg: Decimal
     activity_level: ActivityLevel
 
+    @field_serializer("height_cm", "weight_kg")
+    def serialize_decimal(self, value: Decimal) -> float:
+        """Expose preview measurement decimals as JSON numbers."""
+
+        return float(value)
+
 
 class CalculationSummary(BaseModel):
     bmr_kcal: int
@@ -151,6 +170,7 @@ class ProfileUserResponse(BaseModel):
     id: str
     email: str
     onboarding_completed: bool
+    onboarding_completed_at: datetime
 
 
 class ProfileTargetResponse(BaseModel):
@@ -171,6 +191,12 @@ class ProfileCalculationInputs(BaseModel):
     height_cm: Decimal
     weight_kg: Decimal
     activity_level: ActivityLevel
+
+    @field_serializer("height_cm", "weight_kg")
+    def serialize_decimal(self, value: Decimal) -> float:
+        """Expose profile measurement decimals as JSON numbers."""
+
+        return float(value)
 
 
 class ProfileResponse(BaseModel):
