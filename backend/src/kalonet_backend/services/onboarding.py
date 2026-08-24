@@ -379,6 +379,18 @@ class ProfileService:
             self._session.rollback()
             raise
 
+    def update_nickname(self, user_id: UUID, nickname: str | None) -> tuple[User, UserProfile]:
+        """Update only the privacy display name without touching nutrition inputs."""
+
+        try:
+            user, profile, _, _, _ = self.get_profile(user_id)
+            self._personalization.set_nickname(profile, nickname)
+            self._session.commit()
+            return user, profile
+        except Exception:
+            self._session.rollback()
+            raise
+
 
 def _create_target(
     *,

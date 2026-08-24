@@ -169,6 +169,7 @@ class CurrentNutritionTargetResponse(BaseModel):
 class ProfileUserResponse(BaseModel):
     id: str
     email: str
+    nickname: str | None
     onboarding_completed: bool
     onboarding_completed_at: datetime
 
@@ -205,6 +206,24 @@ class ProfileResponse(BaseModel):
     current_nutrition_target: ProfileTargetResponse
     dietary_preferences: list[str]
     meal_schedule: list[MealScheduleInput]
+
+
+class ProfileNicknameUpdate(BaseModel):
+    """Set a trimmed optional nickname; JSON null clears it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nickname: str | None
+
+    @field_validator("nickname")
+    @classmethod
+    def normalize_nickname(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Nickname must not be blank.")
+        return normalized
 
 
 class NutritionRecalculationRequest(BaseModel):

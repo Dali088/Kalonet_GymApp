@@ -10,12 +10,14 @@ from kalonet_backend.api.dependencies import get_current_access_token_claims
 from kalonet_backend.api.errors import build_error_response
 from kalonet_backend.core.security import AccessTokenClaims
 from kalonet_backend.db.session import get_db_session
+from kalonet_backend.repositories import DailyStepLimitExceededError
 from kalonet_backend.schemas.tracking import (
     ActivityCreate,
     ActivityListResponse,
     ActivityResponse,
     ActivityUpdate,
     DailyDashboardResponse,
+    DailyStepsIncrement,
     DailyStepsResponse,
     DailyStepsUpdate,
     MealCreate,
@@ -372,6 +374,32 @@ def set_steps(
             400,
             "future_date_not_allowed",
             "Future dates are not allowed for tracking writes.",
+        )
+
+
+@router.post("/users/me/daily-steps/{date}/increments", response_model=DailyStepsResponse)
+def add_steps(
+    date: date,
+    payload: DailyStepsIncrement,
+    request: Request,
+    claims: Annotated[AccessTokenClaims, Depends(get_current_access_token_claims)],
+    service: Annotated[TrackingService, Depends(get_tracking_service)],
+) -> DailyStepsResponse | JSONResponse:
+    try:
+        return service.add_steps(claims.user_id, date, payload)
+    except FutureDateNotAllowedError:
+        return _error(
+            request,
+            400,
+            "future_date_not_allowed",
+            "Future dates are not allowed for tracking writes.",
+        )
+    except DailyStepLimitExceededError:
+        return _error(
+            request,
+            409,
+            "daily_steps_limit_exceeded",
+            "The daily step limit would be exceeded.",
         )
 
 

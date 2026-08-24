@@ -65,6 +65,21 @@ void main() {
     expect(adapter.data, {'step_count': 110, 'source': 'manual'});
     expect(steps.stepCount, 110);
   });
+
+  test('steps addition uses the atomic increment route', () async {
+    final adapter = _Adapter(_stepsJson);
+    final api = TrackingApi(client: _client(adapter));
+
+    final steps = await api.addSteps(DateTime(2026, 8, 19), 50);
+
+    expect(adapter.method, 'POST');
+    expect(
+      adapter.uri?.path,
+      '/api/v1/users/me/daily-steps/2026-08-19/increments',
+    );
+    expect(adapter.data, {'increment': 50});
+    expect(steps.stepCount, 110);
+  });
 }
 
 ApiClient _client(_Adapter adapter) {

@@ -4,6 +4,7 @@ import 'profile_models.dart';
 
 abstract interface class ProfileGateway {
   Future<ProfileModel> profile();
+  Future<ProfileModel> updateNickname(String? nickname);
   Future<ProfileModel> recalculate(ProfileCalculationInputsModel inputs);
   Future<List<String>> replacePreferences(List<String> preferences);
   Future<List<MealScheduleInput>> replaceSchedule(
@@ -23,6 +24,18 @@ final class ProfileApi implements ProfileGateway {
   Future<ProfileModel> profile() async {
     final response = await _client.get<Object?>(
       'users/me/profile',
+      retryOnUnauthorized: true,
+    );
+    return ProfileModel.fromJson(_body(response.data));
+  }
+
+  @override
+  Future<ProfileModel> updateNickname(String? nickname) async {
+    // FRONTEND-BACKEND: the optional nickname is a display label only; email
+    // remains the authentication identity and is never sent as a nickname.
+    final response = await _client.patch<Object?>(
+      'users/me/profile',
+      data: <String, dynamic>{'nickname': nickname},
       retryOnUnauthorized: true,
     );
     return ProfileModel.fromJson(_body(response.data));

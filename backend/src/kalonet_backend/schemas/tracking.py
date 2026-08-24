@@ -176,6 +176,14 @@ class DailyStepsUpdate(BaseModel):
     source: Literal["manual"] = "manual"
 
 
+class DailyStepsIncrement(BaseModel):
+    """A positive additive step command; the server returns the new total."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    increment: int = Field(gt=0, le=200000)
+
+
 class ActivityCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

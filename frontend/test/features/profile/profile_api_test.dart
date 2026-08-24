@@ -14,6 +14,7 @@ void main() {
     final profile = await api.profile();
 
     expect(profile.email, 'athlete@example.com');
+    expect(profile.nickname, 'Athlete');
     expect(
       profile.onboardingCompletedAt,
       DateTime.parse('2026-08-19T08:00:00Z').toLocal(),
@@ -32,6 +33,17 @@ void main() {
     expect(adapter.method, 'PATCH');
     expect(adapter.uri?.path, '/api/v1/users/me/settings');
     expect(adapter.data, {'theme_preference': 'dark'});
+  });
+
+  test('nickname update uses the profile patch endpoint', () async {
+    final adapter = _Adapter(_profileJson);
+    final api = ProfileApi(client: _client(adapter));
+
+    await api.updateNickname('Athlete');
+
+    expect(adapter.method, 'PATCH');
+    expect(adapter.uri?.path, '/api/v1/users/me/profile');
+    expect(adapter.data, {'nickname': 'Athlete'});
   });
 }
 
@@ -78,6 +90,7 @@ final _profileJson = <String, dynamic>{
   'user': {
     'id': 'user-1',
     'email': 'athlete@example.com',
+    'nickname': 'Athlete',
     'onboarding_completed': true,
     'onboarding_completed_at': '2026-08-19T08:00:00Z',
   },

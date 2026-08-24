@@ -11,7 +11,13 @@ from kalonet_backend.api.errors import build_error_response
 from kalonet_backend.api.rate_limit import SlidingWindowRateLimiter, retry_after_headers
 from kalonet_backend.core.security import AccessTokenClaims
 from kalonet_backend.db.session import get_db_session
-from kalonet_backend.models import NutritionTarget, UserSettings
+from kalonet_backend.models import (
+    MealScheduleItem,
+    NutritionTarget,
+    User,
+    UserProfile,
+    UserSettings,
+)
 from kalonet_backend.schemas.personalization import (
     AccountDeletionRequest,
     ActivityLevel,
@@ -35,6 +41,7 @@ from kalonet_backend.schemas.personalization import (
     PreferencesResponse,
     PreviewInputs,
     ProfileCalculationInputs,
+    ProfileNicknameUpdate,
     ProfileResponse,
     ProfileTargetResponse,
     ProfileUserResponse,
@@ -247,6 +254,53 @@ def _preview_response(
     )
 
 
+def _profile_response(
+    user: User,
+    profile: UserProfile,
+    target: NutritionTarget,
+    preferences: list[str],
+    schedule: list[MealScheduleItem],
+) -> ProfileResponse:
+    """Build the canonical profile read model for GET and PATCH."""
+
+    assert profile.date_of_birth is not None
+    assert profile.height_cm is not None
+    assert profile.weight_kg is not None
+    assert profile.goal is not None
+    assert profile.sex_for_formula is not None
+    assert profile.activity_level is not None
+    assert user.onboarding_completed_at is not None
+    return ProfileResponse(
+        user=ProfileUserResponse(
+            id=str(user.id),
+            email=user.email,
+            nickname=profile.nickname,
+            onboarding_completed=True,
+            onboarding_completed_at=user.onboarding_completed_at,
+        ),
+        calculation_inputs=ProfileCalculationInputs(
+            goal=cast(Goal, profile.goal),
+            date_of_birth=profile.date_of_birth,
+            formula_sex=cast(SexForFormula, profile.sex_for_formula),
+            height_cm=profile.height_cm,
+            weight_kg=profile.weight_kg,
+            activity_level=cast(ActivityLevel, profile.activity_level),
+        ),
+        current_nutrition_target=cast(
+            ProfileTargetResponse, _target_response(target, onboarding=False)
+        ),
+        dietary_preferences=preferences,
+        meal_schedule=[
+            MealScheduleInput(
+                meal_type=cast(MealType, item.meal_type),
+                preferred_time=item.preferred_time.strftime("%H:%M"),
+                display_order=item.display_order,
+            )
+            for item in schedule
+        ],
+    )
+
+
 @router.get("/onboarding", response_model=OnboardingStateResponse)
 def get_onboarding_state(
     request: Request,
@@ -408,48 +462,33 @@ def get_profile(
 ) -> ProfileResponse | JSONResponse:
     try:
         user, profile, target, preferences, schedule = service.get_profile(claims.user_id)
-        assert profile.date_of_birth is not None
-        assert profile.height_cm is not None
-        assert profile.weight_kg is not None
-        assert profile.goal is not None
-        assert profile.sex_for_formula is not None
-        assert profile.activity_level is not None
-        assert user.onboarding_completed_at is not None
-        return ProfileResponse(
-            user=ProfileUserResponse(
-                id=str(user.id),
-                email=user.email,
-                onboarding_completed=True,
-                onboarding_completed_at=user.onboarding_completed_at,
-            ),
-            calculation_inputs=ProfileCalculationInputs(
-                goal=cast(Goal, profile.goal),
-                date_of_birth=profile.date_of_birth,
-                formula_sex=cast(SexForFormula, profile.sex_for_formula),
-                height_cm=profile.height_cm,
-                weight_kg=profile.weight_kg,
-                activity_level=cast(ActivityLevel, profile.activity_level),
-            ),
-            current_nutrition_target=cast(
-                ProfileTargetResponse,
-                _target_response(target, onboarding=False),
-            ),
-            dietary_preferences=preferences,
-            meal_schedule=[
-                MealScheduleInput(
-                    meal_type=cast(MealType, item.meal_type),
-                    preferred_time=item.preferred_time.strftime("%H:%M"),
-                    display_order=item.display_order,
-                )
-                for item in schedule
-            ],
-        )
+        return _profile_response(user, profile, target, preferences, schedule)
     except (UserNotFoundError, ProfileNotCompletedError):
         return build_error_response(
             request=request,
             status_code=403,
             code="onboarding_required",
             message="Complete onboarding before accessing the profile.",
+        )
+
+
+@router.patch("/profile", response_model=ProfileResponse)
+def update_profile_nickname(
+    payload: ProfileNicknameUpdate,
+    request: Request,
+    claims: Annotated[AccessTokenClaims, Depends(get_current_access_token_claims)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+) -> ProfileResponse | JSONResponse:
+    try:
+        service.update_nickname(claims.user_id, payload.nickname)
+        user, profile, target, preferences, schedule = service.get_profile(claims.user_id)
+        return _profile_response(user, profile, target, preferences, schedule)
+    except (UserNotFoundError, ProfileNotCompletedError):
+        return build_error_response(
+            request=request,
+            status_code=403,
+            code="onboarding_required",
+            message="Complete onboarding before updating the profile.",
         )
 
 

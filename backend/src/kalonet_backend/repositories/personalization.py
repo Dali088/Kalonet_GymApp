@@ -41,6 +41,13 @@ class PersonalizationRepository:
         self._session.flush()
         return profile
 
+    def set_nickname(self, profile: UserProfile, nickname: str | None) -> UserProfile:
+        """Assign the nickname explicitly so ``None`` means clear, not skip."""
+
+        profile.nickname = nickname
+        self._session.flush()
+        return profile
+
     def list_preference_codes(self, user_id: UUID) -> list[str]:
         statement = (
             select(DietaryPreference.code)

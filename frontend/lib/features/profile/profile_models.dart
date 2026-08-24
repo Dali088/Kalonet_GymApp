@@ -76,6 +76,7 @@ class ProfileTargetModel {
 class ProfileModel {
   const ProfileModel({
     required this.email,
+    required this.nickname,
     required this.onboardingCompletedAt,
     required this.inputs,
     required this.target,
@@ -84,6 +85,7 @@ class ProfileModel {
   });
 
   final String email;
+  final String? nickname;
   final DateTime onboardingCompletedAt;
   final ProfileCalculationInputsModel inputs;
   final ProfileTargetModel target;
@@ -99,6 +101,7 @@ class ProfileModel {
     }
     return ProfileModel(
       email: _string(user, 'email'),
+      nickname: user['nickname'] is String ? user['nickname'] as String : null,
       onboardingCompletedAt: _date(user, 'onboarding_completed_at'),
       inputs: ProfileCalculationInputsModel.fromJson(
         _map(json, 'calculation_inputs'),

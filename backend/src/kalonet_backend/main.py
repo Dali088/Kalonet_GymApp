@@ -16,6 +16,7 @@ from kalonet_backend.api.errors import (
     invalid_access_token_error_handler,
     request_validation_error_handler,
 )
+from kalonet_backend.api.gamification import router as gamification_router
 from kalonet_backend.api.health import router as health_router
 from kalonet_backend.api.rate_limit import (
     SlidingWindowRateLimiter,
@@ -161,6 +162,7 @@ def create_app(
     app.include_router(users_router)
     app.include_router(tracking_router)
     app.include_router(ai_router)
+    app.include_router(gamification_router)
 
     return app
 

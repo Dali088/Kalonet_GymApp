@@ -1205,9 +1205,6 @@ final class _StepsSectionState extends State<_StepsSection> {
     Object? error,
     bool loading = false,
   }) {
-    if (_controller.text.isEmpty) {
-      _controller.text = '$initialCount';
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1221,47 +1218,54 @@ final class _StepsSectionState extends State<_StepsSection> {
             const Icon(Icons.directions_walk),
             const SizedBox(width: 8),
             Expanded(
-              child: TextField(
-                controller: _controller,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Steps'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Total: $initialCount'),
+                  TextField(
+                    controller: _controller,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Add steps'),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 8),
             SizedBox(
               width: 88,
               child: ElevatedButton(
-                onPressed: _saving ? null : () => _save(context),
+                onPressed: _saving ? null : () => _add(context),
                 child: _saving
                     ? const CircularProgressIndicator()
-                    : const Text('Save'),
+                    : const Text('Add'),
               ),
             ),
           ],
+        ),
+        TextButton(
+          onPressed: _saving ? null : () => _correct(context, initialCount),
+          child: const Text('Correct total'),
         ),
       ],
     );
   }
 
-  Future<void> _save(BuildContext context) async {
-    final count = int.tryParse(_controller.text.trim());
-    if (count == null || count < 0) return;
+  Future<void> _add(BuildContext context) async {
+    final increment = int.tryParse(_controller.text.trim());
+    if (increment == null || increment <= 0) return;
     setState(() => _saving = true);
     final container = ProviderScope.containerOf(context, listen: false);
     try {
       final saved = await container
           .read(trackingApiProvider)
-          .setSteps(widget.date, count);
+          .addSteps(widget.date, increment);
       if (context.mounted) {
-        _controller.value = TextEditingValue(
-          text: '${saved.stepCount}',
-          selection: TextSelection.collapsed(
-            offset: '${saved.stepCount}'.length,
-          ),
-        );
+        _controller.clear();
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('Steps saved.')));
+          ..showSnackBar(
+            SnackBar(content: Text('Steps total: ${saved.stepCount}.')),
+          );
       }
       container.invalidate(stepsProvider(widget.date));
       container.invalidate(dashboardProvider(widget.date));
@@ -1271,6 +1275,30 @@ final class _StepsSectionState extends State<_StepsSection> {
       if (context.mounted) {
         _showError(context, 'Kalonet returned an invalid steps response.');
       }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _correct(BuildContext context, int currentCount) async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _TextDialog(
+        title: 'Correct total steps',
+        initial: '$currentCount',
+        hint: '0 to 200000',
+      ),
+    );
+    final count = int.tryParse(value?.trim() ?? '');
+    if (count == null || count < 0 || !context.mounted) return;
+    setState(() => _saving = true);
+    final container = ProviderScope.containerOf(context, listen: false);
+    try {
+      await container.read(trackingApiProvider).setSteps(widget.date, count);
+      container.invalidate(stepsProvider(widget.date));
+      container.invalidate(dashboardProvider(widget.date));
+    } on ApiError catch (error) {
+      if (context.mounted) _showError(context, error.message);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1533,6 +1561,12 @@ final class _ProfileTab extends ConsumerWidget {
           icon: const Icon(Icons.lock_outline),
           label: const Text('Change password'),
         ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => context.push('/gamification'),
+          icon: const Icon(Icons.emoji_events_outlined),
+          label: const Text('View gamification'),
+        ),
       ],
     );
   }
@@ -1569,7 +1603,12 @@ final class _ProfileCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(profile.email, style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              profile.nickname ?? profile.email,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            if (profile.nickname != null)
+              Text(profile.email, style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),
             Text(
               '${_label(inputs.goal)} • ${inputs.weightKg} kg • ${inputs.heightCm} cm',
@@ -1588,6 +1627,10 @@ final class _ProfileCard extends ConsumerWidget {
               spacing: 8,
               children: [
                 OutlinedButton(
+                  onPressed: () => _editNickname(context, ref),
+                  child: const Text('Nickname'),
+                ),
+                OutlinedButton(
                   onPressed: () => _editPreferences(context, ref),
                   child: const Text('Preferences'),
                 ),
@@ -1605,6 +1648,25 @@ final class _ProfileCard extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _editNickname(BuildContext context, WidgetRef ref) async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _TextDialog(
+        title: 'Profile nickname',
+        initial: profile.nickname ?? '',
+        hint: 'Optional, up to 32 characters',
+      ),
+    );
+    if (value == null) return;
+    final nickname = value.trim().isEmpty ? null : value.trim();
+    try {
+      await ref.read(profileApiProvider).updateNickname(nickname);
+      ref.invalidate(profileProvider);
+    } on ApiError catch (error) {
+      if (context.mounted) _showError(context, error.message);
+    }
   }
 
   Future<void> _editPreferences(BuildContext context, WidgetRef ref) async {

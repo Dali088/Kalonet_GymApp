@@ -19,6 +19,10 @@ from kalonet_backend.services.authentication_tokens import (
     AuthenticationTokenService,
     IssuedSessionTokens,
 )
+from kalonet_backend.services.gamification import (
+    GamificationOnboardingRequiredError,
+    GamificationService,
+)
 from kalonet_backend.services.nutrition import (
     NutritionCalculationInputs,
     NutritionCalculationResult,
@@ -103,4 +107,6 @@ __all__ = [
     "OnboardingRequiredError",
     "TrackingService",
     "WaterEntryNotFoundError",
+    "GamificationOnboardingRequiredError",
+    "GamificationService",
 ]

@@ -49,6 +49,9 @@ def create_logout_fixture(
         family_id=uuid4(),
         expires_at=issued_tokens.refresh_token_expires_at,
     )
+    # Commit fixture setup inside the test's outer transaction so a service
+    # rollback cannot erase the rows this test is checking.
+    db_session.commit()
 
     return token_service, user, refresh_session, issued_tokens
 
@@ -116,5 +119,12 @@ def test_logout_rejects_a_different_user_or_session(
             refresh_token=first_tokens.refresh_token,
         )
 
-    stored_sessions = list(db_session.scalars(select(RefreshSession)))
+    stored_sessions = list(
+        db_session.scalars(
+            select(RefreshSession).where(
+                RefreshSession.id.in_((first_session.id, second_session.id))
+            )
+        )
+    )
+    assert len(stored_sessions) == 2
     assert all(refresh_session.revoked_at is None for refresh_session in stored_sessions)

@@ -39,6 +39,7 @@ abstract interface class TrackingGateway {
 
   Future<DailyStepsModel> steps(DateTime date);
   Future<DailyStepsModel> setSteps(DateTime date, int stepCount);
+  Future<DailyStepsModel> addSteps(DateTime date, int increment);
 
   Future<ActivityListModel> activities(DateTime date);
   Future<ActivityModel> createActivity(
@@ -228,6 +229,18 @@ final class TrackingApi implements TrackingGateway {
     final response = await _client.put<Object?>(
       'users/me/daily-steps/${_dateOnly(date)}',
       data: <String, dynamic>{'step_count': stepCount, 'source': 'manual'},
+      retryOnUnauthorized: true,
+    );
+    return DailyStepsModel.fromJson(_body(response.data));
+  }
+
+  @override
+  Future<DailyStepsModel> addSteps(DateTime date, int increment) async {
+    // FRONTEND-BACKEND: this command is additive and the backend performs an
+    // atomic upsert before returning the authoritative new daily total.
+    final response = await _client.post<Object?>(
+      'users/me/daily-steps/${_dateOnly(date)}/increments',
+      data: <String, dynamic>{'increment': increment},
       retryOnUnauthorized: true,
     );
     return DailyStepsModel.fromJson(_body(response.data));

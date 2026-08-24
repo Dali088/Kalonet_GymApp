@@ -1,3 +1,4 @@
+from kalonet_backend.repositories.gamification import GamificationRepository
 from kalonet_backend.repositories.idempotency import (
     IdempotencyConflictError,
     IdempotencyInProgressError,
@@ -15,6 +16,7 @@ from kalonet_backend.repositories.refresh_sessions import (
 )
 from kalonet_backend.repositories.tracking import (
     ActivityRepository,
+    DailyStepLimitExceededError,
     DashboardRepository,
     MealRepository,
     StepsRepository,
@@ -32,6 +34,7 @@ __all__ = [
     "UserSettingsRepository",
     "ActivityRepository",
     "DashboardRepository",
+    "DailyStepLimitExceededError",
     "MealRepository",
     "StepsRepository",
     "WaterRepository",
@@ -40,4 +43,5 @@ __all__ = [
     "IdempotencyRepository",
     "IdempotencyReplay",
     "request_hash",
+    "GamificationRepository",
 ]
