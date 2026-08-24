@@ -34,27 +34,15 @@ class MealItemCreateInput {
     required this.quantity,
     required this.servingDescription,
     required this.nutrition,
-    this.source = 'manual',
-    this.provider,
-    this.barcode,
   });
 
   final String name;
   final double quantity;
   final String servingDescription;
   final NutritionValuesModel nutrition;
-  final String source;
-  final String? provider;
-  final String? barcode;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'name': name,
-    'source': source,
-    if (provider != null && barcode != null)
-      'source_reference': <String, dynamic>{
-        'provider': provider,
-        'barcode': barcode,
-      },
     'quantity': quantity,
     'serving_description': servingDescription,
     'nutrition': nutrition.toJson(),
@@ -89,7 +77,6 @@ class MealItemModel {
   const MealItemModel({
     required this.id,
     required this.name,
-    required this.source,
     required this.quantity,
     required this.servingDescription,
     required this.nutrition,
@@ -97,7 +84,6 @@ class MealItemModel {
 
   final String id;
   final String name;
-  final String source;
   final double quantity;
   final String servingDescription;
   final NutritionValuesModel nutrition;
@@ -106,7 +92,6 @@ class MealItemModel {
     return MealItemModel(
       id: _string(json, 'id'),
       name: _string(json, 'name'),
-      source: _string(json, 'source'),
       quantity: _number(json, 'quantity'),
       servingDescription: _string(json, 'serving_description'),
       nutrition: NutritionValuesModel.fromJson(_map(json, 'nutrition')),
@@ -383,44 +368,6 @@ class DailyDashboardModel {
       activityDurationMinutes: _integer(activity, 'duration_minutes'),
       activityCaloriesKcal: _number(activity, 'estimated_calories_kcal'),
       generatedAt: _dateTime(json, 'generated_at'),
-    );
-  }
-}
-
-class FoodProductModel {
-  const FoodProductModel({
-    required this.barcode,
-    required this.provider,
-    required this.name,
-    required this.servingDescription,
-    required this.nutrition,
-    this.brand,
-  });
-
-  final String barcode;
-  final String provider;
-  final String name;
-  final String servingDescription;
-  final NutritionValuesModel nutrition;
-  final String? brand;
-
-  factory FoodProductModel.fromJson(Map<String, dynamic> json) {
-    final product = _map(json, 'product');
-    final nutrition = product['nutrition'];
-    if (nutrition is! Map) {
-      throw const FormatException(
-        'Barcode response did not include nutrition.',
-      );
-    }
-    return FoodProductModel(
-      barcode: _string(json, 'barcode'),
-      provider: _string(json, 'provider'),
-      name: _string(product, 'name'),
-      servingDescription: _string(product, 'serving_description'),
-      nutrition: NutritionValuesModel.fromJson(
-        Map<String, dynamic>.from(nutrition),
-      ),
-      brand: product['brand'] as String?,
     );
   }
 }

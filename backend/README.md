@@ -13,7 +13,7 @@ The MVP includes:
 - User onboarding
 - Calorie and macronutrient targets
 - Meal logging
-- Barcode-based food lookup
+- AI-assisted meal-photo proposals and manual meal logging
 - Water tracking
 - Step tracking
 - Activity tracking

@@ -1,4 +1,3 @@
-import re
 from datetime import date
 from typing import Annotated
 from uuid import UUID
@@ -9,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from kalonet_backend.api.dependencies import get_current_access_token_claims
 from kalonet_backend.api.errors import build_error_response
-from kalonet_backend.core.config import Settings, get_settings
 from kalonet_backend.core.security import AccessTokenClaims
 from kalonet_backend.db.session import get_db_session
 from kalonet_backend.schemas.tracking import (
@@ -20,8 +18,6 @@ from kalonet_backend.schemas.tracking import (
     DailyDashboardResponse,
     DailyStepsResponse,
     DailyStepsUpdate,
-    FoodNutrition,
-    FoodProductResponse,
     MealCreate,
     MealItemCreate,
     MealItemCreatedResponse,
@@ -33,13 +29,6 @@ from kalonet_backend.schemas.tracking import (
     WaterEntryCreate,
     WaterEntryUpdate,
     WaterListResponse,
-)
-from kalonet_backend.services.food_provider import (
-    FoodProvider,
-    FoodProviderInvalidResponseError,
-    FoodProviderRateLimitedError,
-    FoodProviderUnavailableError,
-    OpenFoodFactsProvider,
 )
 from kalonet_backend.services.tracking import (
     ActiveNutritionTargetNotFoundError,
@@ -57,13 +46,6 @@ router = APIRouter(prefix="/api/v1", tags=["Tracking"])
 
 def get_tracking_service(session: Annotated[Session, Depends(get_db_session)]) -> TrackingService:
     return TrackingService(session)
-
-
-def get_food_provider(
-    request: Request, settings: Annotated[Settings, Depends(get_settings)]
-) -> FoodProvider:
-    provider = getattr(request.app.state, "food_provider", None)
-    return provider or OpenFoodFactsProvider(settings)
 
 
 def _error(request: Request, status_code: int, code: str, message: str) -> JSONResponse:
@@ -475,56 +457,3 @@ def delete_activity(
         return Response(status_code=204)
     except ActivityNotFoundError:
         return _error(request, 404, "activity_not_found", "The activity was not found.")
-
-
-@router.get("/food-products/barcodes/{barcode}", response_model=FoodProductResponse)
-def lookup_barcode(
-    barcode: str,
-    request: Request,
-    claims: Annotated[AccessTokenClaims, Depends(get_current_access_token_claims)],
-    provider: Annotated[FoodProvider, Depends(get_food_provider)],
-) -> FoodProductResponse | JSONResponse:
-    del claims
-    if re.fullmatch(r"\d{8,14}", barcode) is None:
-        return _error(request, 422, "invalid_barcode", "Barcode must contain 8 to 14 digits.")
-    try:
-        product = provider.lookup(barcode)
-    except FoodProviderRateLimitedError:
-        return _error(
-            request,
-            429,
-            "provider_rate_limit_exceeded",
-            "The food provider rate limit was reached.",
-        )
-    except FoodProviderInvalidResponseError:
-        return _error(
-            request,
-            502,
-            "food_provider_invalid_response",
-            "The food provider returned unusable data.",
-        )
-    except FoodProviderUnavailableError:
-        return _error(
-            request,
-            503,
-            "food_provider_unavailable",
-            "The food provider is temporarily unavailable.",
-        )
-    if product is None:
-        return _error(
-            request,
-            404,
-            "food_product_not_found",
-            "No usable food product was found for this barcode.",
-        )
-    return FoodProductResponse(
-        barcode=product.barcode or barcode,
-        product={
-            "name": product.name,
-            "brand": product.brand,
-            "serving_description": product.serving_description,
-            "nutrition": FoodNutrition(**product.nutrition),
-        },
-        provider=product.provider,
-        retrieved_at=product.retrieved_at,
-    )

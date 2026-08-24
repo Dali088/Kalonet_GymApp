@@ -19,13 +19,6 @@ from kalonet_backend.services.authentication_tokens import (
     AuthenticationTokenService,
     IssuedSessionTokens,
 )
-from kalonet_backend.services.food_provider import (
-    FoodProduct,
-    FoodProviderInvalidResponseError,
-    FoodProviderRateLimitedError,
-    FoodProviderUnavailableError,
-    OpenFoodFactsProvider,
-)
 from kalonet_backend.services.nutrition import (
     NutritionCalculationInputs,
     NutritionCalculationResult,
@@ -102,11 +95,6 @@ __all__ = [
     "UserNotFoundError",
     "InvalidTimeZoneError",
     "SettingsService",
-    "FoodProduct",
-    "FoodProviderInvalidResponseError",
-    "FoodProviderRateLimitedError",
-    "FoodProviderUnavailableError",
-    "OpenFoodFactsProvider",
     "ActiveNutritionTargetNotFoundError",
     "ActivityNotFoundError",
     "FutureDateNotAllowedError",

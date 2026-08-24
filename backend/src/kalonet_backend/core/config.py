@@ -33,10 +33,11 @@ class Settings(BaseSettings):
     email_from: str = "no-reply@kalonet.local"
     password_reset_link_scheme: str = "kalonet://password-reset"
 
-    food_provider_base_url: str = "https://world.openfoodfacts.org/api/v3.6"
-    food_provider_user_agent: str = "Kalonet/0.1 (local-development)"
-    food_provider_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
-    food_provider_max_attempts: int = Field(default=2, ge=1, le=3)
+    gemini_api_key: SecretStr | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_timeout_seconds: float = Field(default=20.0, gt=0, le=60)
+    gemini_max_attempts: int = Field(default=2, ge=1, le=3)
 
     database_url: str = "postgresql+psycopg://kalonet:kalonet_local_password@localhost:5433/kalonet"
 

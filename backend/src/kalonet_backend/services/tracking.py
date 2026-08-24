@@ -111,7 +111,6 @@ def _item_response(item: MealItem) -> MealItemResponse:
     return MealItemResponse(
         id=item.id,
         name=item.name,
-        source=item.source,  # type: ignore[arg-type]
         quantity=item.quantity,
         serving_description=item.serving_description,
         nutrition=NutritionValues(
@@ -239,13 +238,9 @@ class TrackingService:
 
     @staticmethod
     def _new_item(item: MealItemCreate, display_order: int) -> MealItem:
-        reference = item.source_reference
         return MealItem(
             display_order=display_order,
             name=item.name,
-            source=item.source,
-            source_provider=reference.provider if reference else None,
-            source_barcode=reference.barcode if reference else None,
             quantity=item.quantity,
             serving_description=item.serving_description,
             calories_kcal=item.nutrition.calories_kcal,

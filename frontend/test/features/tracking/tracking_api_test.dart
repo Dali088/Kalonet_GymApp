@@ -54,14 +54,6 @@ void main() {
     expect((adapter.data as Map)['record_date'], '2026-08-19');
   });
 
-  test('barcode product is a proposal with editable nutrition', () {
-    final product = FoodProductModel.fromJson(_foodJson);
-
-    expect(product.name, 'Greek yogurt');
-    expect(product.provider, 'open_food_facts');
-    expect(product.nutrition.proteinG, 17);
-  });
-
   test('steps update uses the approved route and payload', () async {
     final adapter = _Adapter(_stepsJson);
     final api = TrackingApi(client: _client(adapter));
@@ -167,7 +159,6 @@ final _mealJson = <String, dynamic>{
     {
       'id': 'item-1',
       'name': 'Rice',
-      'source': 'manual',
       'quantity': 1,
       'serving_description': '1 bowl',
       'nutrition': {
@@ -178,23 +169,6 @@ final _mealJson = <String, dynamic>{
       },
     },
   ],
-};
-
-final _foodJson = <String, dynamic>{
-  'barcode': '1234567890123',
-  'provider': 'open_food_facts',
-  'product': {
-    'name': 'Greek yogurt',
-    'brand': 'Example',
-    'serving_description': '170 g cup',
-    'nutrition': {
-      'calories_kcal': 130,
-      'protein_g': 17,
-      'carbohydrate_g': 9,
-      'fat_g': 2,
-    },
-  },
-  'retrieved_at': '2026-08-19T10:00:00Z',
 };
 
 final _stepsJson = <String, dynamic>{

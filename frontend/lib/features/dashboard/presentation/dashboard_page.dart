@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/auth/session_providers.dart';
 import '../../../core/errors/api_error.dart';
@@ -10,6 +11,7 @@ import '../../profile/profile_providers.dart';
 import '../../onboarding/onboarding_models.dart';
 import '../../tracking/tracking_models.dart';
 import '../../tracking/tracking_providers.dart';
+import '../../tracking/presentation/meal_photo_review_page.dart';
 
 final class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -509,11 +511,9 @@ final class _MealComposerDialogState
   final _protein = TextEditingController();
   final _carbs = TextEditingController();
   final _fat = TextEditingController();
-  final _barcode = TextEditingController();
   String _mealType = 'breakfast';
   final String _recordedTime = '12:00';
-  String _source = 'manual';
-  String? _provider;
+  List<MealItemCreateInput>? _photoItems;
   bool _busy = false;
   String? _error;
 
@@ -528,43 +528,88 @@ final class _MealComposerDialogState
       _protein,
       _carbs,
       _fat,
-      _barcode,
     ]) {
       controller.dispose();
     }
     super.dispose();
   }
 
-  Future<void> _lookup() async {
-    final barcode = _barcode.text.trim();
-    if (!RegExp(r'^\d{8,14}$').hasMatch(barcode)) {
-      setState(() => _error = 'Enter an 8–14 digit barcode.');
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+  Future<void> _analyzeMealPhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Take a photo'),
+              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || source == null) return;
+
     try {
-      final product = await ref
-          .read(trackingApiProvider)
-          .lookupBarcode(barcode);
-      _itemName.text = product.brand == null || product.brand!.isEmpty
-          ? product.name
-          : '${product.brand} ${product.name}';
-      _serving.text = product.servingDescription;
-      _calories.text = product.nutrition.caloriesKcal.toString();
-      _protein.text = product.nutrition.proteinG.toString();
-      _carbs.text = product.nutrition.carbohydrateG.toString();
-      _fat.text = product.nutrition.fatG.toString();
-      setState(() {
-        _source = 'barcode';
-        _provider = product.provider;
-      });
-    } on ApiError catch (error) {
-      setState(
-        () => _error = '${error.message} You can enter the food manually.',
+      final image = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 85,
+        requestFullMetadata: false,
       );
+      if (!mounted || image == null) return;
+      final mimeType = _mealPhotoMimeType(image.name);
+      if (mimeType == null) {
+        setState(() => _error = 'Choose a JPEG, PNG, or WebP image.');
+        return;
+      }
+      setState(() {
+        _busy = true;
+        _error = null;
+      });
+      final analysis = await ref
+          .read(trackingApiProvider)
+          .analyzeMealPhoto(
+            bytes: await image.readAsBytes(),
+            filename: image.name.isEmpty ? 'meal-photo.jpg' : image.name,
+            mimeType: mimeType,
+          );
+      if (!mounted) return;
+      final reviewed = await Navigator.of(context)
+          .push<List<MealItemCreateInput>>(
+            MaterialPageRoute(
+              builder: (_) => MealPhotoReviewPage(analysis: analysis),
+            ),
+          );
+      if (reviewed != null && mounted) {
+        setState(() {
+          _photoItems = reviewed;
+          _error = null;
+        });
+      }
+    } on ApiError catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on FormatException {
+      if (mounted) {
+        setState(
+          () => _error =
+              'The server returned an unexpected AI response. Use manual entry instead.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error =
+              'The photo could not be selected or analyzed. Use manual entry instead.',
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -578,9 +623,14 @@ final class _MealComposerDialogState
       _carbs.text,
       _fat.text,
     ].map((value) => double.tryParse(value.trim())).toList();
-    if (_itemName.text.trim().isEmpty || values.any((value) => value == null)) {
+    if (_name.text.trim().isEmpty ||
+        (_photoItems == null &&
+            (_itemName.text.trim().isEmpty ||
+                values.any((value) => value == null)))) {
       setState(
-        () => _error = 'Enter the food name and valid nutrition values.',
+        () => _error = _photoItems == null
+            ? 'Enter the food name and valid nutrition values.'
+            : 'Enter a meal name.',
       );
       return;
     }
@@ -589,6 +639,23 @@ final class _MealComposerDialogState
       _error = null;
     });
     try {
+      // FRONTEND-BACKEND: Sends the reviewed proposal through the existing
+      // meal endpoint, which stores its nutrition snapshot.
+      final items =
+          _photoItems ??
+          [
+            MealItemCreateInput(
+              name: _itemName.text.trim(),
+              quantity: values[0]!,
+              servingDescription: _serving.text.trim(),
+              nutrition: NutritionValuesModel(
+                caloriesKcal: values[1]!,
+                proteinG: values[2]!,
+                carbohydrateG: values[3]!,
+                fatG: values[4]!,
+              ),
+            ),
+          ];
       await ref
           .read(trackingApiProvider)
           .createMeal(
@@ -597,22 +664,7 @@ final class _MealComposerDialogState
               mealType: _mealType,
               name: _name.text.trim(),
               recordedTime: _recordedTime,
-              items: [
-                MealItemCreateInput(
-                  name: _itemName.text.trim(),
-                  quantity: values[0]!,
-                  servingDescription: _serving.text.trim(),
-                  source: _source,
-                  provider: _provider,
-                  barcode: _source == 'barcode' ? _barcode.text.trim() : null,
-                  nutrition: NutritionValuesModel(
-                    caloriesKcal: values[1]!,
-                    proteinG: values[2]!,
-                    carbohydrateG: values[3]!,
-                    fatG: values[4]!,
-                  ),
-                ),
-              ],
+              items: items,
             ),
             idempotencyKey: 'meal-${DateTime.now().microsecondsSinceEpoch}',
           );
@@ -662,86 +714,87 @@ final class _MealComposerDialogState
               controller: _name,
               decoration: const InputDecoration(labelText: 'Meal name'),
             ),
-            TextField(
-              controller: _itemName,
-              decoration: const InputDecoration(labelText: 'Food name'),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _barcode,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Barcode (optional)',
+            if (_photoItems == null) ...[
+              TextField(
+                controller: _itemName,
+                decoration: const InputDecoration(labelText: 'Food name'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _analyzeMealPhoto,
+                icon: const Icon(Icons.auto_awesome),
+                label: const Text('Analyze meal photo'),
+              ),
+              TextField(
+                controller: _serving,
+                decoration: const InputDecoration(
+                  labelText: 'Serving description',
+                ),
+              ),
+              TextField(
+                controller: _quantity,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: 'Quantity'),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _calories,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Calories'),
                     ),
                   ),
-                ),
-                IconButton(
-                  onPressed: _busy ? null : _lookup,
-                  icon: const Icon(Icons.search),
-                  tooltip: 'Look up barcode',
-                ),
-              ],
-            ),
-            TextField(
-              controller: _serving,
-              decoration: const InputDecoration(
-                labelText: 'Serving description',
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _protein,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Protein (g)',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            TextField(
-              controller: _quantity,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _carbs,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Carbs (g)'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _fat,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Fat (g)'),
+                    ),
+                  ),
+                ],
               ),
-              decoration: const InputDecoration(labelText: 'Quantity'),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _calories,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Calories'),
+            ] else ...[
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.auto_awesome),
+                  title: Text('${_photoItems!.length} AI-reviewed food(s)'),
+                  subtitle: const Text(
+                    'Estimates will be saved as reviewed meal values.',
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _protein,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Protein (g)'),
+                  trailing: IconButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() => _photoItems = null),
+                    icon: const Icon(Icons.clear),
+                    tooltip: 'Clear AI proposal',
                   ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _carbs,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Carbs (g)'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _fat,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Fat (g)'),
-                  ),
-                ),
-              ],
-            ),
-            if (_source == 'barcode')
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Source: ${_provider ?? 'food provider'} • Values are editable before saving.',
                 ),
               ),
+            ],
             if (_error != null)
               Align(
                 alignment: Alignment.centerLeft,
@@ -766,6 +819,14 @@ final class _MealComposerDialogState
         ),
       ],
     );
+  }
+
+  String? _mealPhotoMimeType(String filename) {
+    final lower = filename.toLowerCase();
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return null;
   }
 }
 

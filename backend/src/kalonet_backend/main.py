@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy import Engine
 
+from kalonet_backend.api.ai import router as ai_router
 from kalonet_backend.api.authentication import (
     router as authentication_router,
 )
@@ -28,7 +29,7 @@ from kalonet_backend.db.session import (
     create_database_engine,
     create_session_factory,
 )
-from kalonet_backend.services.food_provider import OpenFoodFactsProvider
+from kalonet_backend.services.meal_photo import GeminiMealPhotoProvider
 
 
 def create_app(
@@ -108,7 +109,7 @@ def create_app(
         limit=3,
         window=timedelta(hours=1),
     )
-    app.state.food_provider = OpenFoodFactsProvider(resolved_settings)
+    app.state.meal_photo_provider = GeminiMealPhotoProvider(resolved_settings)
 
     @app.middleware("http")
     async def enforce_authentication_rate_limits(
@@ -159,6 +160,7 @@ def create_app(
     app.include_router(authentication_router)
     app.include_router(users_router)
     app.include_router(tracking_router)
+    app.include_router(ai_router)
 
     return app
 
