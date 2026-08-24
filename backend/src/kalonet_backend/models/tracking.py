@@ -44,7 +44,7 @@ class WaterEntry(TimestampMixin, Base):
 
 
 class DailyStepRecord(TimestampMixin, Base):
-    """One absolute step total per user and local date."""
+    """One authoritative step total per user and local date."""
 
     __tablename__ = "daily_step_records"
     __table_args__ = (

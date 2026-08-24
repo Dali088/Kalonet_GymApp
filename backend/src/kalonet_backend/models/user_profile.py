@@ -39,6 +39,10 @@ class UserProfile(TimestampMixin, Base):
             ),
             name="activity_level_allowed",
         ),
+        CheckConstraint(
+            "nickname IS NULL OR length(btrim(nickname)) BETWEEN 1 AND 32",
+            name="ck_user_profiles_nickname_not_blank",
+        ),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -49,6 +53,11 @@ class UserProfile(TimestampMixin, Base):
             name="fk_user_profiles_user_id_users",
         ),
         primary_key=True,
+    )
+
+    nickname: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
     )
 
     date_of_birth: Mapped[date | None] = mapped_column(

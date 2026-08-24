@@ -1,4 +1,5 @@
 from kalonet_backend.models.dietary_preference import DietaryPreference
+from kalonet_backend.models.gamification import UserBadge, UserProgression, XpAward
 from kalonet_backend.models.meal import Meal, MealItem
 from kalonet_backend.models.meal_schedule_item import MealScheduleItem
 from kalonet_backend.models.nutrition_target import NutritionTarget
@@ -31,4 +32,7 @@ __all__ = [
     "DailyStepRecord",
     "ActivityEntry",
     "IdempotencyRecord",
+    "UserProgression",
+    "XpAward",
+    "UserBadge",
 ]

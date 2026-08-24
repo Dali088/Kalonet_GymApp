@@ -35,6 +35,7 @@ from kalonet_backend.schemas.tracking import (
     ActivityType,
     ActivityUpdate,
     DailyDashboardResponse,
+    DailyStepsIncrement,
     DailyStepsResponse,
     DailyStepsUpdate,
     DashboardActivity,
@@ -59,6 +60,7 @@ from kalonet_backend.schemas.tracking import (
     WaterEntryUpdate,
     WaterListResponse,
 )
+from kalonet_backend.services.gamification import GamificationService
 
 
 class FutureDateNotAllowedError(Exception):
@@ -161,6 +163,7 @@ class TrackingService:
         self.activities = ActivityRepository(session)
         self.dashboard = DashboardRepository(session)
         self.idempotency = IdempotencyRepository(session)
+        self.gamification = GamificationService(session)
 
     def _settings(self, user_id: UUID) -> UserSettings:
         settings = self.session.scalar(select(UserSettings).where(UserSettings.user_id == user_id))
@@ -234,6 +237,7 @@ class TrackingService:
         for index, item in enumerate(payload.items, start=1):
             meal.items.append(self._new_item(item, index))
         self.meals.add(meal)
+        self.gamification.evaluate_after_tracking(user_id, payload.record_date)
         return self._finish(reservation, _meal_response(meal), 201)
 
     @staticmethod
@@ -273,6 +277,7 @@ class TrackingService:
         )
         self.session.flush()
         result = _meal_response(meal)
+        self.gamification.evaluate_after_tracking(user_id, new_date)
         self.session.commit()
         return result
 
@@ -378,6 +383,7 @@ class TrackingService:
                 recorded_at=recorded_at,
             )
         )
+        self.gamification.evaluate_after_tracking(user_id, record_date)
         body = WaterCreatedResponse(
             **self._water_response(entry).model_dump(),
             daily_total_ml=self.water.total_for_date(user_id, record_date),
@@ -404,6 +410,7 @@ class TrackingService:
             **self._water_response(entry).model_dump(),
             daily_total_ml=self.water.total_for_date(user_id, entry.record_date),
         )
+        self.gamification.evaluate_after_tracking(user_id, entry.record_date)
         self.session.commit()
         return body
 
@@ -430,6 +437,24 @@ class TrackingService:
         settings = self._settings(user_id)
         self._ensure_not_future(record_date, settings.time_zone)
         entry = self.steps.upsert(user_id, record_date, payload.step_count, payload.source)
+        self.gamification.evaluate_after_tracking(user_id, record_date)
+        body = DailyStepsResponse(
+            record_date=record_date,
+            step_count=entry.step_count,
+            source=cast(Literal["manual"], entry.source),
+            target=None,
+            updated_at=entry.updated_at,
+        )
+        self.session.commit()
+        return body
+
+    def add_steps(
+        self, user_id: UUID, record_date: date, payload: DailyStepsIncrement
+    ) -> DailyStepsResponse:
+        settings = self._settings(user_id)
+        self._ensure_not_future(record_date, settings.time_zone)
+        entry = self.steps.increment_atomic(user_id, record_date, payload.increment)
+        self.gamification.evaluate_after_tracking(user_id, record_date)
         body = DailyStepsResponse(
             record_date=record_date,
             step_count=entry.step_count,
@@ -490,6 +515,7 @@ class TrackingService:
                 recorded_at=recorded_at,
             )
         )
+        self.gamification.evaluate_after_tracking(user_id, record_date)
         return self._finish(reservation, self._activity_response(entry), 201)
 
     def update_activity(
@@ -515,6 +541,7 @@ class TrackingService:
         self._ensure_not_future(entry.record_date, settings.time_zone)
         self.session.flush()
         body = self._activity_response(entry)
+        self.gamification.evaluate_after_tracking(user_id, entry.record_date)
         self.session.commit()
         return body
 

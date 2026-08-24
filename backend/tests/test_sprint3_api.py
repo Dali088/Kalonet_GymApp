@@ -1,8 +1,18 @@
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy import func, select
 
-from kalonet_backend.models import ActivityEntry, DailyStepRecord, Meal, MealItem, WaterEntry
+from kalonet_backend.models import (
+    ActivityEntry,
+    DailyStepRecord,
+    Meal,
+    MealItem,
+    UserBadge,
+    UserProgression,
+    WaterEntry,
+    XpAward,
+)
 
 
 def register(client, email: str) -> dict:
@@ -182,6 +192,7 @@ def test_empty_dashboard_requires_onboarding(client) -> None:
 
 def test_account_deletion_cascades_sprint3_records(client, db_session) -> None:
     session = register(client, "delete-tracking@example.com")
+    user_id = UUID(session["user"]["id"])
     headers = complete_onboarding(client, session)
     assert (
         client.post("/api/v1/users/me/meals", headers=headers, json=meal_payload()).status_code
@@ -223,8 +234,56 @@ def test_account_deletion_cascades_sprint3_records(client, db_session) -> None:
         json={"current_password": "correct-horse-battery-staple", "confirmation": "DELETE"},
     )
     assert deleted.status_code == 204
-    assert db_session.scalar(select(func.count()).select_from(Meal)) == 0
-    assert db_session.scalar(select(func.count()).select_from(MealItem)) == 0
-    assert db_session.scalar(select(func.count()).select_from(WaterEntry)) == 0
-    assert db_session.scalar(select(func.count()).select_from(DailyStepRecord)) == 0
-    assert db_session.scalar(select(func.count()).select_from(ActivityEntry)) == 0
+    assert (
+        db_session.scalar(select(func.count()).select_from(Meal).where(Meal.user_id == user_id))
+        == 0
+    )
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(MealItem)
+            .join(Meal, Meal.id == MealItem.meal_id)
+            .where(Meal.user_id == user_id)
+        )
+        == 0
+    )
+    assert (
+        db_session.scalar(
+            select(func.count()).select_from(WaterEntry).where(WaterEntry.user_id == user_id)
+        )
+        == 0
+    )
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(DailyStepRecord)
+            .where(DailyStepRecord.user_id == user_id)
+        )
+        == 0
+    )
+    assert (
+        db_session.scalar(
+            select(func.count()).select_from(ActivityEntry).where(ActivityEntry.user_id == user_id)
+        )
+        == 0
+    )
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(UserProgression)
+            .where(UserProgression.user_id == user_id)
+        )
+        == 0
+    )
+    assert (
+        db_session.scalar(
+            select(func.count()).select_from(XpAward).where(XpAward.user_id == user_id)
+        )
+        == 0
+    )
+    assert (
+        db_session.scalar(
+            select(func.count()).select_from(UserBadge).where(UserBadge.user_id == user_id)
+        )
+        == 0
+    )

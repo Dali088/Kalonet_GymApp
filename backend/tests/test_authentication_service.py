@@ -83,7 +83,7 @@ def test_login_rejects_invalid_credentials_without_creating_a_session(
 ) -> None:
     registration_service, login_service = create_services(db_session)
 
-    registration_service.register(
+    registration = registration_service.register(
         email="login@example.com",
         password=VALID_PASSWORD,
     )
@@ -94,6 +94,10 @@ def test_login_rejects_invalid_credentials_without_creating_a_session(
             password=password,
         )
 
-    session_count = db_session.scalar(select(func.count()).select_from(RefreshSession))
+    session_count = db_session.scalar(
+        select(func.count())
+        .select_from(RefreshSession)
+        .where(RefreshSession.user_id == registration.user_id)
+    )
 
     assert session_count == 1

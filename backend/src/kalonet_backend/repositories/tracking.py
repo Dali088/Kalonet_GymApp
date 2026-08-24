@@ -1,10 +1,15 @@
 from datetime import date
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session, selectinload
 
 from kalonet_backend.models import ActivityEntry, DailyStepRecord, Meal, MealItem, WaterEntry
+
+
+class DailyStepLimitExceededError(Exception):
+    """The requested increment would exceed the per-day safety limit."""
 
 
 class MealRepository:
@@ -135,6 +140,37 @@ class StepsRepository:
             existing.source = source
         self.session.flush()
         return existing
+
+    def increment_atomic(self, user_id: UUID, record_date: date, increment: int) -> DailyStepRecord:
+        """Atomically add steps without a read-modify-write race."""
+
+        statement = (
+            postgresql_insert(DailyStepRecord)
+            .values(
+                id=uuid4(),
+                user_id=user_id,
+                record_date=record_date,
+                step_count=increment,
+                source="manual",
+            )
+            .on_conflict_do_update(
+                index_elements=[DailyStepRecord.user_id, DailyStepRecord.record_date],
+                set_={
+                    "step_count": DailyStepRecord.step_count + increment,
+                    "updated_at": func.now(),
+                },
+                where=DailyStepRecord.step_count + increment <= 200000,
+            )
+            .returning(DailyStepRecord.id)
+        )
+        record_id = self.session.execute(statement).scalar_one_or_none()
+        if record_id is None:
+            raise DailyStepLimitExceededError
+        self.session.flush()
+        record = self.session.scalar(select(DailyStepRecord).where(DailyStepRecord.id == record_id))
+        if record is None:  # pragma: no cover - the RETURNING row is authoritative
+            raise DailyStepLimitExceededError
+        return record
 
 
 class ActivityRepository:

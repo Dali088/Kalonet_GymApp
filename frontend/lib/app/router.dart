@@ -9,6 +9,7 @@ import '../features/auth/presentation/login_page.dart';
 import '../features/auth/presentation/registration_page.dart';
 import '../features/auth/presentation/reset_password_page.dart';
 import '../features/dashboard/presentation/dashboard_page.dart';
+import '../features/gamification/presentation/gamification_page.dart';
 import '../features/onboarding/presentation/onboarding_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -58,6 +59,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/dashboard',
         builder: (context, state) => const DashboardPage(),
       ),
+      GoRoute(
+        path: '/gamification',
+        builder: (context, state) => const GamificationPage(),
+      ),
     ],
   );
 });
@@ -85,7 +90,9 @@ String? authRedirect({
       location == '/register' ||
       location == '/forgot-password';
   final isProtectedLocation =
-      location == '/onboarding' || location == '/dashboard';
+      location == '/onboarding' ||
+      location == '/dashboard' ||
+      location == '/gamification';
 
   if (!isAuthenticated && isProtectedLocation) {
     return '/';
