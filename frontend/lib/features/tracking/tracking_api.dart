@@ -1,7 +1,11 @@
 import 'package:dio/dio.dart';
+import 'package:http_parser/http_parser.dart';
 
 import '../../core/network/api_client.dart';
+import 'meal_photo.dart';
 import 'tracking_models.dart';
+
+const _mealPhotoReceiveTimeout = Duration(seconds: 45);
 
 abstract interface class TrackingGateway {
   Future<DailyDashboardModel> dashboard(DateTime date);
@@ -47,7 +51,11 @@ abstract interface class TrackingGateway {
   );
   Future<void> deleteActivity(String activityId);
 
-  Future<FoodProductModel> lookupBarcode(String barcode);
+  Future<MealPhotoAnalysisModel> analyzeMealPhoto({
+    required List<int> bytes,
+    required String filename,
+    required String mimeType,
+  });
 }
 
 final class TrackingApi implements TrackingGateway {
@@ -271,12 +279,29 @@ final class TrackingApi implements TrackingGateway {
   }
 
   @override
-  Future<FoodProductModel> lookupBarcode(String barcode) async {
-    final response = await _client.get<Object?>(
-      'food-products/barcodes/$barcode',
+  Future<MealPhotoAnalysisModel> analyzeMealPhoto({
+    required List<int> bytes,
+    required String filename,
+    required String mimeType,
+  }) async {
+    // FRONTEND-BACKEND: The image crosses the boundary only here. The API
+    // validates the MIME type/signature and returns an editable proposal.
+    final response = await _client.post<Object?>(
+      'ai/meal-photo-analyses',
+      data: FormData.fromMap(<String, dynamic>{
+        'image': MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+          contentType: MediaType.parse(mimeType),
+        ),
+      }),
+      options: Options(
+        contentType: 'multipart/form-data',
+        receiveTimeout: _mealPhotoReceiveTimeout,
+      ),
       retryOnUnauthorized: true,
     );
-    return FoodProductModel.fromJson(_body(response.data));
+    return MealPhotoAnalysisModel.fromJson(_body(response.data));
   }
 
   static Options? _idempotencyOptions(String? key) {

@@ -54,15 +54,10 @@ class MealItem(TimestampMixin, Base):
 
     __tablename__ = "meal_items"
     __table_args__ = (
-        CheckConstraint("source IN ('manual', 'barcode')", name="source_allowed"),
         CheckConstraint("quantity > 0", name="quantity_positive"),
         CheckConstraint(
             "calories_kcal >= 0 AND protein_g >= 0 AND carbohydrate_g >= 0 AND fat_g >= 0",
             name="nutrition_nonnegative",
-        ),
-        CheckConstraint(
-            "source = 'manual' OR (source_provider IS NOT NULL AND source_barcode IS NOT NULL)",
-            name="barcode_source_metadata",
         ),
         CheckConstraint("length(btrim(name)) BETWEEN 1 AND 160", name="name_not_blank"),
         UniqueConstraint("meal_id", "display_order", name="uq_meal_items_display_order"),
@@ -76,13 +71,6 @@ class MealItem(TimestampMixin, Base):
     )
     display_order: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
-    source: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")
-    source_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    source_api_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    source_barcode: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    source_retrieved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
     serving_description: Mapped[str] = mapped_column(String(160), nullable=False)
     calories_kcal: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)

@@ -13,7 +13,6 @@ MealType = Literal[
     "dinner",
     "evening_snack",
 ]
-MealSource = Literal["manual", "barcode"]
 ActivityType = Literal["walking", "running", "cycling", "strength_training", "swimming", "other"]
 
 
@@ -34,30 +33,13 @@ class NutritionTotals(NutritionValues):
     pass
 
 
-class FoodSourceReference(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    provider: str = Field(min_length=1, max_length=64)
-    barcode: str = Field(pattern=r"^\d{8,14}$")
-
-
 class MealItemCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=160)
-    source: MealSource = "manual"
-    source_reference: FoodSourceReference | None = None
     quantity: Decimal = Field(gt=0, le=100000)
     serving_description: str = Field(min_length=1, max_length=160)
     nutrition: NutritionValues
-
-    @model_validator(mode="after")
-    def validate_source_reference(self) -> "MealItemCreate":
-        if self.source == "barcode" and self.source_reference is None:
-            raise ValueError("Barcode items require a source reference.")
-        if self.source == "manual" and self.source_reference is not None:
-            raise ValueError("Manual items cannot include a source reference.")
-        return self
 
 
 class MealCreate(BaseModel):
@@ -109,7 +91,6 @@ class MealItemUpdate(BaseModel):
 class MealItemResponse(BaseModel):
     id: UUID
     name: str
-    source: MealSource
     quantity: Decimal
     serving_description: str
     nutrition: NutritionValues
@@ -307,21 +288,3 @@ class DailyDashboardResponse(BaseModel):
     steps: DashboardSteps
     activity: DashboardActivity
     generated_at: datetime
-
-
-class FoodNutrition(BaseModel):
-    @field_serializer("calories_kcal", "protein_g", "carbohydrate_g", "fat_g")
-    def serialize_decimal(self, value: Decimal) -> float:
-        return float(value)
-
-    calories_kcal: Decimal
-    protein_g: Decimal
-    carbohydrate_g: Decimal
-    fat_g: Decimal
-
-
-class FoodProductResponse(BaseModel):
-    barcode: str
-    product: dict[str, str | FoodNutrition | None]
-    provider: str
-    retrieved_at: datetime
