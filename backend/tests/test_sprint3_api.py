@@ -36,9 +36,7 @@ def complete_onboarding(client, session: dict) -> dict[str, str]:
         },
         "activity_level": "moderately_active",
         "dietary_preferences": ["halal"],
-        "meal_schedule": [
-            {"meal_type": "breakfast", "preferred_time": "08:00", "display_order": 1}
-        ],
+        "meal_schedule": [{"preferred_time": "08:00", "display_order": 1}],
     }
     assert (
         client.patch("/api/v1/users/me/onboarding", headers=headers, json=payload).status_code

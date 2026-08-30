@@ -45,6 +45,33 @@ void main() {
     expect(adapter.uri?.path, '/api/v1/users/me/profile');
     expect(adapter.data, {'nickname': 'Athlete'});
   });
+
+  test('avatar upload uses the authenticated multipart endpoint', () async {
+    final adapter = _Adapter(_profileJson);
+    final api = ProfileApi(client: _client(adapter));
+
+    await api.uploadAvatar(
+      bytes: Uint8List.fromList([1, 2, 3]),
+      contentType: 'image/png',
+    );
+
+    expect(adapter.method, 'PUT');
+    expect(adapter.uri?.path, '/api/v1/users/me/profile/avatar');
+    expect(adapter.data, isA<FormData>());
+    final form = adapter.data! as FormData;
+    expect(form.files.single.key, 'image');
+    expect(form.files.single.value.contentType?.mimeType, 'image/png');
+  });
+
+  test('avatar removal uses the authenticated delete endpoint', () async {
+    final adapter = _Adapter(_profileJson);
+    final api = ProfileApi(client: _client(adapter));
+
+    await api.removeAvatar();
+
+    expect(adapter.method, 'DELETE');
+    expect(adapter.uri?.path, '/api/v1/users/me/profile/avatar');
+  });
 }
 
 ApiClient _client(_Adapter adapter) {
@@ -91,6 +118,7 @@ final _profileJson = <String, dynamic>{
     'id': 'user-1',
     'email': 'athlete@example.com',
     'nickname': 'Athlete',
+    'avatar_present': false,
     'onboarding_completed': true,
     'onboarding_completed_at': '2026-08-19T08:00:00Z',
   },
@@ -114,7 +142,7 @@ final _profileJson = <String, dynamic>{
   },
   'dietary_preferences': ['halal'],
   'meal_schedule': [
-    {'meal_type': 'breakfast', 'preferred_time': '08:00', 'display_order': 1},
+    {'preferred_time': '08:00', 'display_order': 1},
   ],
 };
 

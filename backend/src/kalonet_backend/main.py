@@ -6,6 +6,7 @@ from typing import cast
 from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy import Engine
+from starlette.middleware.cors import CORSMiddleware
 
 from kalonet_backend.api.ai import router as ai_router
 from kalonet_backend.api.authentication import (
@@ -58,6 +59,15 @@ def create_app(
         openapi_url="/openapi.json" if resolved_settings.docs_enabled else None,
         lifespan=lifespan,
     )
+
+    if resolved_settings.environment == "development":
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     app.add_exception_handler(
         RequestValidationError,

@@ -60,7 +60,7 @@ final _stateJson = <String, dynamic>{
   'activity_level': 'moderately_active',
   'dietary_preferences': ['halal'],
   'meal_schedule': [
-    {'meal_type': 'breakfast', 'preferred_time': '08:00', 'display_order': 1},
+    {'preferred_time': '08:00', 'display_order': 1},
   ],
   'missing_fields': [],
   'nutrition_target_status': 'not_calculated',

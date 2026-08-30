@@ -157,7 +157,7 @@ final class ApiClient {
         throw apiError;
       }
 
-      final refreshedAccessToken = await _refreshAccessToken();
+      final refreshedAccessToken = await _refreshAccessToken.call();
       if (refreshedAccessToken == null || refreshedAccessToken.isEmpty) {
         throw apiError;
       }

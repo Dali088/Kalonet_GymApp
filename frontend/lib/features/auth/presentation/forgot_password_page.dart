@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/api_error.dart';
 import '../../../core/theme/kalonet_colors.dart';
+import '../../../core/widgets/kalonet_auth_scaffold.dart';
+import '../../../core/widgets/kalonet_brand_mark.dart';
 import '../authentication_models.dart';
 import '../authentication_providers.dart';
 
@@ -56,54 +58,79 @@ final class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Reset your password')),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Enter your email and we will send instructions if an account exists.',
-                      textAlign: TextAlign.center,
+    return KalonetAuthScaffold(
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final contentWidth = (constraints.maxWidth - 48)
+                .clamp(0.0, 420.0)
+                .toDouble();
+            return Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: SizedBox(
+                  width: contentWidth,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Align(
+                            alignment: Alignment.center,
+                            child: KalonetBrandMark(size: 68),
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Reset your password',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Enter your email and we will send instructions if an account exists.',
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 24),
+                          if (_errorMessage != null)
+                            _MessageBanner(message: _errorMessage!),
+                          if (_successMessage != null)
+                            _MessageBanner(
+                              message: _successMessage!,
+                              success: true,
+                            ),
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: const InputDecoration(
+                              labelText: 'Email',
+                            ),
+                            validator: (value) =>
+                                value == null || !value.contains('@')
+                                ? 'Enter a valid email.'
+                                : null,
+                          ),
+                          const SizedBox(height: 20),
+                          ElevatedButton(
+                            onPressed: _isSubmitting ? null : _submit,
+                            child: _isSubmitting
+                                ? const CircularProgressIndicator()
+                                : const Text('Send instructions'),
+                          ),
+                          const SizedBox(height: 12),
+                          TextButton(
+                            onPressed: () => context.go('/login'),
+                            child: const Text('Back to login'),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 24),
-                    if (_errorMessage != null)
-                      _MessageBanner(message: _errorMessage!),
-                    if (_successMessage != null)
-                      _MessageBanner(message: _successMessage!, success: true),
-                    TextFormField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(labelText: 'Email'),
-                      validator: (value) =>
-                          value == null || !value.contains('@')
-                          ? 'Enter a valid email.'
-                          : null,
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      onPressed: _isSubmitting ? null : _submit,
-                      child: _isSubmitting
-                          ? const CircularProgressIndicator()
-                          : const Text('Send instructions'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: () => context.go('/login'),
-                      child: const Text('Back to login'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );

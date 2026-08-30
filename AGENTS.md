@@ -117,9 +117,19 @@ Kalonet has completed Sprint 1 authentication and Sprint 2 onboarding/targets/pr
 
 **Current password-reset implementation:** the approved `POST /api/v1/auth/password-resets` completion flow now locks and consumes one reset token, updates the password, revokes active refresh sessions with reason `password_reset`, and commits those changes atomically. Request and completion flows are verified.
 
-**Current implementation checkpoint:** Sprint 1 authentication, Sprint 2 onboarding/targets/profile, Sprint 3 backend tracking/MVP, Sprint 4 Flutter mobile-alpha, Sprint 5 daily-use screens, F2 AI meal-photo proposals, nickname/profile editing, additive steps, and Gamification v1 are implemented locally on `develop`. Barcode Food Scanning was implemented, evaluated, and intentionally retired: its Flutter scanner/lookup, Open Food Facts adapter, barcode-only dependency/configuration, endpoint, tests, and meal provenance columns were removed by migration `c1d2e3f4a5b6`; accepted nutrition snapshots remain. F2 adds a protected multipart endpoint, bounded Gemini adapter, image validation, structured proposal validation, and an editable Flutter review that reuses the same meal-save path; AI output remains proposal-only until review. Migrations `d2e3f4a5b6c7` and `e3f4a5b6c7d8` add the optional nickname and the server-authoritative progression/XP-award/badge tables; the current Alembic head is `e3f4a5b6c7d8`. Gamification uses static catalogs, unique award/unlock persistence, same-transaction tracking evaluation, equal-XP leaderboard ranks, and privacy-safe nickname fallback. The camera permission and `image_picker` remain because AI capture uses them; `mobile_scanner` was barcode-only and is removed. The modern redesign remains waiting.
+**Current implementation checkpoint:** Sprint 1 authentication, Sprint 2 onboarding/targets/profile, Sprint 3 backend tracking/MVP, Sprint 4 Flutter mobile-alpha, Sprint 5 daily-use screens, F2 AI meal-photo proposals, nickname/profile editing, additive steps, Gamification v1, and the premium frontend redesign are implemented locally on `develop`. Barcode Food Scanning was implemented, evaluated, and intentionally retired: its Flutter scanner/lookup, Open Food Facts adapter, barcode-only dependency/configuration, endpoint, tests, and meal provenance columns were removed by migration `c1d2e3f4a5b6`; accepted nutrition snapshots remain. F2 adds a protected multipart endpoint, bounded Gemini adapter, image validation, structured proposal validation, and an editable Flutter review that reuses the same meal-save path; AI output remains proposal-only until review. Migrations `d2e3f4a5b6c7` and `e3f4a5b6c7d8` add the optional nickname and the server-authoritative progression/XP-award/badge tables; the current Alembic head is `e3f4a5b6c7d8`. Gamification uses static catalogs, unique award/unlock persistence, same-transaction tracking evaluation, equal-XP leaderboard ranks, and privacy-safe nickname fallback. The camera permission and `image_picker` remain because AI capture uses them; `mobile_scanner` was barcode-only and is removed. The redesign is presentation-only: tokenized dark-green theme, shared surfaces/state components, native motion, responsive auth/onboarding/dashboard/gamification/AI review styling, and one static brand asset; API, database, providers, and behavior remain unchanged except for development-only localhost CORS headers needed for browser verification. The Web compile blocker is fixed; Chrome, DTD, and Playwright verify public/authenticated routes. The live Gemini provider remains externally blocked by project access.
+
+Latest backend verification: the test-isolation follow-up is complete locally. The full PostgreSQL-backed suite passes 135 tests on each of two consecutive runs. The corrected tests scope assertions to the current user/session, and rollback-sensitive logout fixture setup is committed inside the outer test transaction. Production code and client-visible behavior are unchanged.
 
 Continuous delivery is approved and verified as artifact-only delivery: build, smoke-test, and store a versioned Docker/OCI image in GitHub Container Registry. It does not deploy the application. Do not add deployment automation, hosting configuration, or production secrets. The first GitHub run succeeded; future changes must preserve the CI-success prerequisite and artifact-only boundary.
+
+## Frontend modernization rules
+
+- Keep the existing Kalonet dark-green palette recognizable; use `frontend/lib/core/theme/kalonet_tokens.dart` for spacing, radii, motion, elevation, and gradients instead of new one-off values.
+- Use semantic accents for nutrition, hydration, steps, activity, gamification, warning, and error states. Do not move API calls or business rules into widgets.
+- Prefer shared widgets in `frontend/lib/core/widgets/` for surfaces, state panels, brand marks, and auth framing. Preserve the `// FRONTEND-BACKEND:` comments and all client-visible contracts.
+- Use native Flutter implicit motion (`AnimatedSwitcher`, `TweenAnimationBuilder`, and `AnimatedContainer`) before adding an animation dependency. Keep loading, empty, error, retry, and disabled states explicit.
+- Generated images are development-time/static assets only. Never place provider keys in Flutter or use generated art as a replacement for functional icons.
 
 ## Contract discipline
 
@@ -169,9 +179,15 @@ uv run mypy
 uv run alembic current
 uv run pytest
 uv run pytest
+cd ..\frontend
+dart format --output=none lib test
+flutter analyze --no-pub
+flutter test --no-pub
 ```
 
-Do not discard uncommitted work. The handoff says Step 6B was completed, but repository evidence is authoritative.
+Do not discard uncommitted work. Repository evidence is authoritative. When a
+frontend-only change is being reviewed, the backend commands remain required
+for a release checkpoint but the focused frontend checks may be run first.
 
 ## Test rules
 

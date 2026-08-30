@@ -2,7 +2,8 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 
-from kalonet_backend.models import Meal, MealItem, User
+from kalonet_backend.models import Meal, MealItem, User, UserProgression
+from kalonet_backend.services.gamification import _public_display_name
 
 
 def register(client, email: str) -> dict:
@@ -26,9 +27,7 @@ def complete_onboarding(client, session: dict) -> dict[str, str]:
         },
         "activity_level": "moderately_active",
         "dietary_preferences": ["halal"],
-        "meal_schedule": [
-            {"meal_type": "breakfast", "preferred_time": "08:00", "display_order": 1}
-        ],
+        "meal_schedule": [{"preferred_time": "08:00", "display_order": 1}],
     }
     assert (
         client.patch("/api/v1/users/me/onboarding", headers=headers, json=payload).status_code
@@ -83,6 +82,50 @@ def test_profile_nickname_is_trimmed_and_clearable(client) -> None:
     blank = client.patch("/api/v1/users/me/profile", headers=headers, json={"nickname": "  "})
     assert blank.status_code == 422
     assert blank.json()["error"]["code"] == "validation_error"
+
+
+def test_leaderboard_uses_duplicate_nicknames_and_safe_fallback(client, db_session) -> None:
+    first_email = "leaderboard-first@example.com"
+    second_email = "leaderboard-second@example.com"
+    fallback_email = "leaderboard-fallback@example.com"
+    first = complete_onboarding(client, register(client, first_email))
+    second = complete_onboarding(client, register(client, second_email))
+    complete_onboarding(client, register(client, fallback_email))
+
+    for headers in (first, second):
+        response = client.patch(
+            "/api/v1/users/me/profile",
+            headers=headers,
+            json={"nickname": "IronDali"},
+        )
+        assert response.status_code == 200
+
+    first_user = db_session.scalar(select(User).where(User.email == first_email))
+    assert first_user is not None
+    db_session.add(UserProgression(user_id=first_user.id, total_xp=8420))
+    db_session.flush()
+
+    leaderboard = client.get(
+        "/api/v1/users/me/gamification/leaderboard",
+        headers=second,
+        params={"limit": 100},
+    )
+    assert leaderboard.status_code == 200
+    rows = leaderboard.json()["items"]
+    assert rows[0]["display_name"] == "IronDali"
+    assert rows[0]["total_xp"] == 8420
+    assert rows[0]["position"] == 1
+    assert sum(row["display_name"] == "IronDali" for row in rows) == 2
+    assert any(row["is_current_user"] and row["display_name"] == "IronDali" for row in rows)
+    assert any(row["display_name"] == "Kalonet member" for row in rows)
+    assert all("email" not in row for row in rows)
+
+
+def test_public_leaderboard_name_rejects_blank_values() -> None:
+    assert _public_display_name(None) == "Kalonet member"
+    assert _public_display_name("") == "Kalonet member"
+    assert _public_display_name("  ") == "Kalonet member"
+    assert _public_display_name("  IronDali  ") == "IronDali"
 
 
 def test_tracking_before_onboarding_keeps_existing_write_behavior(client) -> None:

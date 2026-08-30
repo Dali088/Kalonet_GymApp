@@ -20,3 +20,26 @@ final leaderboardProvider = FutureProvider<LeaderboardModel>((ref) {
   ref.watch(selectedDateProvider);
   return ref.watch(gamificationApiProvider).leaderboard();
 });
+
+final achievementsRefreshControllerProvider =
+    Provider<AchievementsRefreshController>(AchievementsRefreshController.new);
+
+final class AchievementsRefreshController {
+  AchievementsRefreshController(this._ref);
+
+  final Ref _ref;
+  Future<void>? _inFlight;
+
+  Future<void> refresh(DateTime date) {
+    return _inFlight ??= _refresh(date).whenComplete(() => _inFlight = null);
+  }
+
+  Future<void> _refresh(DateTime date) async {
+    _ref.invalidate(gamificationProvider(date));
+    _ref.invalidate(leaderboardProvider);
+    await Future.wait<Object?>([
+      _ref.read(gamificationProvider(date).future),
+      _ref.read(leaderboardProvider.future),
+    ]);
+  }
+}

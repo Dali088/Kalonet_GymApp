@@ -1,15 +1,7 @@
 from datetime import time
 from uuid import UUID, uuid4
 
-from sqlalchemy import (
-    CheckConstraint,
-    ForeignKey,
-    Index,
-    SmallInteger,
-    String,
-    Time,
-    UniqueConstraint,
-)
+from sqlalchemy import CheckConstraint, ForeignKey, Index, SmallInteger, Time, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -18,26 +10,16 @@ from kalonet_backend.db.mixins import TimestampMixin
 
 
 class MealScheduleItem(TimestampMixin, Base):
-    """User-owned preferred meal type, time, and display position."""
+    """User-owned scheduled meal time and display position."""
 
     __tablename__ = "meal_schedule_items"
     __table_args__ = (
         UniqueConstraint(
             "user_id",
-            "meal_type",
-            name="uq_meal_schedule_items_user_meal_type",
-        ),
-        UniqueConstraint(
-            "user_id",
             "display_order",
             name="uq_meal_schedule_items_user_display_order",
         ),
-        CheckConstraint(
-            "meal_type IN ('breakfast', 'morning_snack', 'lunch', "
-            "'afternoon_snack', 'dinner', 'evening_snack')",
-            name="meal_type_allowed",
-        ),
-        CheckConstraint("display_order BETWEEN 1 AND 20", name="display_order_range"),
+        CheckConstraint("display_order BETWEEN 1 AND 15", name="display_order_range"),
         Index("ix_meal_schedule_items_user_id", "user_id"),
     )
 
@@ -47,6 +29,5 @@ class MealScheduleItem(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE", name="fk_meal_schedule_items_user_id_users"),
         nullable=False,
     )
-    meal_type: Mapped[str] = mapped_column(String(20), nullable=False)
     preferred_time: Mapped[time] = mapped_column(Time, nullable=False)
     display_order: Mapped[int] = mapped_column(SmallInteger, nullable=False)

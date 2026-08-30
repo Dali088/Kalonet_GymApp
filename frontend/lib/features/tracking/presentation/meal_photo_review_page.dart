@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/kalonet_colors.dart';
+import '../../../core/theme/kalonet_tokens.dart';
+import '../../../core/widgets/kalonet_brand_mark.dart';
+import '../../../core/widgets/kalonet_surface.dart';
 import '../meal_photo.dart';
 import '../tracking_models.dart';
 
@@ -66,27 +70,55 @@ final class _MealPhotoReviewPageState extends State<MealPhotoReviewPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Review AI meal estimate')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(widget.analysis.disclaimer),
-          const SizedBox(height: 8),
-          Text(
-            'Overall confidence: ${(widget.analysis.overallConfidence * 100).toStringAsFixed(0)}%',
-          ),
-          const SizedBox(height: 16),
-          for (var index = 0; index < _drafts.length; index++)
-            _PhotoItemEditor(index: index, draft: _drafts[index]),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: KalonetGradients.page),
+        child: ListView(
+          padding: const EdgeInsets.all(KalonetSpacing.md),
+          children: [
+            const Center(child: KalonetBrandMark(size: 68)),
+            const SizedBox(height: KalonetSpacing.sm),
+            KalonetSurface(
+              accent: KalonetColors.primary.withValues(alpha: 0.65),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AI proposal',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: KalonetSpacing.xs),
+                  Text(widget.analysis.disclaimer),
+                  const SizedBox(height: KalonetSpacing.sm),
+                  Text(
+                    'Overall confidence: ${(widget.analysis.overallConfidence * 100).toStringAsFixed(0)}%',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: KalonetSpacing.sm),
+            for (var index = 0; index < _drafts.length; index++)
+              _PhotoItemEditor(index: index, draft: _drafts[index]),
+            AnimatedSwitcher(
+              duration: KalonetMotion.resolve(context, KalonetMotion.quick),
+              child: _error == null
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      padding: const EdgeInsets.only(top: KalonetSpacing.xs),
+                      child: Text(
+                        _error!,
+                        key: ValueKey(_error),
+                        style: const TextStyle(color: KalonetColors.errorText),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: KalonetSpacing.md),
+            FilledButton(
+              onPressed: _useReviewedItems,
+              child: const Text('Use reviewed foods'),
+            ),
           ],
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _useReviewedItems,
-            child: const Text('Use reviewed foods'),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -100,43 +132,41 @@ final class _PhotoItemEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Food ${index + 1}',
-              style: Theme.of(context).textTheme.titleMedium,
+    return KalonetSurface(
+      margin: const EdgeInsets.only(bottom: KalonetSpacing.sm),
+      accent: KalonetColors.border,
+      padding: const EdgeInsets.all(KalonetSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Food ${index + 1}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          TextField(
+            controller: draft.name,
+            decoration: const InputDecoration(labelText: 'Name'),
+          ),
+          TextField(
+            controller: draft.grams,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Estimated portion (g)',
             ),
-            TextField(
-              controller: draft.name,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            TextField(
-              controller: draft.grams,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Estimated portion (g)',
-              ),
-            ),
-            _NumberRow(
-              first: draft.calories,
-              firstLabel: 'Calories (kcal)',
-              second: draft.protein,
-              secondLabel: 'Protein (g)',
-            ),
-            _NumberRow(
-              first: draft.carbs,
-              firstLabel: 'Carbs (g)',
-              second: draft.fat,
-              secondLabel: 'Fat (g)',
-            ),
-          ],
-        ),
+          ),
+          _NumberRow(
+            first: draft.calories,
+            firstLabel: 'Calories (kcal)',
+            second: draft.protein,
+            secondLabel: 'Protein (g)',
+          ),
+          _NumberRow(
+            first: draft.carbs,
+            firstLabel: 'Carbs (g)',
+            second: draft.fat,
+            secondLabel: 'Fat (g)',
+          ),
+        ],
       ),
     );
   }

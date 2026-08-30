@@ -32,18 +32,15 @@ class Measurements {
 
 class MealScheduleInput {
   const MealScheduleInput({
-    required this.mealType,
     required this.preferredTime,
     required this.displayOrder,
   });
 
-  final String mealType;
   final String preferredTime;
   final int displayOrder;
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
-      'meal_type': mealType,
       'preferred_time': preferredTime,
       'display_order': displayOrder,
     };
@@ -51,7 +48,6 @@ class MealScheduleInput {
 
   factory MealScheduleInput.fromJson(Map<String, dynamic> json) {
     return MealScheduleInput(
-      mealType: _requiredString(json, 'meal_type'),
       preferredTime: _requiredString(json, 'preferred_time'),
       displayOrder: _requiredInt(json, 'display_order'),
     );

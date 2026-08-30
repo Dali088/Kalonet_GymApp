@@ -23,6 +23,19 @@ backend/.venv/
 .DS_Store
 Thumbs.db
 
+# Local Codex and agent tool state
+/.agents/
+/.aider-desk/
+/.codex/
+/.playwright-mcp/
+/skills-lock.json
+
+# Generated root-level screenshots and captures
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+
 # Local project docs and agent instructions
 /agents.md
 !/AGENTS.md

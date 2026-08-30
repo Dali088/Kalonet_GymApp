@@ -65,7 +65,6 @@ def test_junction_and_schedule_constraints_are_database_enforced(db_session: Ses
 
     schedule = MealScheduleItem(
         user_id=user.id,
-        meal_type="breakfast",
         preferred_time=time(8, 0),
         display_order=1,
     )
@@ -74,7 +73,6 @@ def test_junction_and_schedule_constraints_are_database_enforced(db_session: Ses
     db_session.add(
         MealScheduleItem(
             user_id=user.id,
-            meal_type="lunch",
             preferred_time=time(13, 0),
             display_order=1,
         )
