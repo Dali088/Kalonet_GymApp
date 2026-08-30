@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, Numeric, String
+from sqlalchemy import CheckConstraint, Date, ForeignKey, LargeBinary, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -43,6 +43,11 @@ class UserProfile(TimestampMixin, Base):
             "nickname IS NULL OR length(btrim(nickname)) BETWEEN 1 AND 32",
             name="ck_user_profiles_nickname_not_blank",
         ),
+        CheckConstraint(
+            "(avatar_bytes IS NULL AND avatar_content_type IS NULL) OR "
+            "(avatar_bytes IS NOT NULL AND avatar_content_type IS NOT NULL)",
+            name="avatar_pair_consistent",
+        ),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -56,6 +61,16 @@ class UserProfile(TimestampMixin, Base):
     )
 
     nickname: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+
+    avatar_bytes: Mapped[bytes | None] = mapped_column(
+        LargeBinary,
+        nullable=True,
+    )
+
+    avatar_content_type: Mapped[str | None] = mapped_column(
         String(32),
         nullable=True,
     )

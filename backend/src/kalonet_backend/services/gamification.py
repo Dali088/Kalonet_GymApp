@@ -29,6 +29,13 @@ class GamificationOnboardingRequiredError(ValueError):
     """Gamification is available only after onboarding has completed."""
 
 
+def _public_display_name(nickname: str | None) -> str:
+    """Return a privacy-safe leaderboard identity without exposing email."""
+
+    normalized = nickname.strip() if nickname is not None else ""
+    return normalized or "Kalonet member"
+
+
 class GamificationService:
     """Evaluate authoritative tracking state and persist idempotent rewards."""
 
@@ -70,7 +77,7 @@ class GamificationService:
         entries = [
             LeaderboardEntryResponse(
                 position=position,
-                display_name=nickname or "Kalonet member",
+                display_name=_public_display_name(nickname),
                 total_xp=total_xp,
                 rank=rank_for_xp(total_xp).code,
                 is_current_user=leaderboard_user_id == user_id,

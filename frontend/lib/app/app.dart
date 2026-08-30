@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/kalonet_theme.dart';
+import '../core/theme/kalonet_tokens.dart';
+import '../core/widgets/kalonet_brand_mark.dart';
+import '../core/widgets/kalonet_surface.dart';
 import '../features/auth/authentication_providers.dart';
 import 'router.dart';
 
@@ -92,14 +95,19 @@ final class _StartupLoadingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Restoring your session...'),
-          ],
+      body: DecoratedBox(
+        decoration: BoxDecoration(gradient: KalonetGradients.page),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              KalonetBrandMark(size: 84),
+              SizedBox(height: KalonetSpacing.lg),
+              CircularProgressIndicator(),
+              SizedBox(height: KalonetSpacing.md),
+              Text('Restoring your session...'),
+            ],
+          ),
         ),
       ),
     );
@@ -114,28 +122,36 @@ final class _StartupErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'We could not restore your session.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge,
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: KalonetGradients.page),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(KalonetSpacing.lg),
+            child: KalonetSurface(
+              padding: const EdgeInsets.all(KalonetSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const KalonetBrandMark(size: 72),
+                  const SizedBox(height: KalonetSpacing.md),
+                  Text(
+                    'We could not restore your session.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: KalonetSpacing.sm),
+                  const Text(
+                    'Check your connection and try again. Your account has not been changed.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: KalonetSpacing.md),
+                  ElevatedButton(
+                    onPressed: onRetry,
+                    child: const Text('Try again'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              const Text(
-                'Check your connection and try again. Your account has not been changed.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: onRetry,
-                child: const Text('Try again'),
-              ),
-            ],
+            ),
           ),
         ),
       ),

@@ -96,7 +96,7 @@ class PersonalizationRepository:
     def replace_schedule(
         self,
         user_id: UUID,
-        items: list[tuple[str, time, int]],
+        items: list[tuple[time, int]],
     ) -> list[MealScheduleItem]:
         self._session.execute(delete(MealScheduleItem).where(MealScheduleItem.user_id == user_id))
         self._session.flush()
@@ -104,11 +104,10 @@ class PersonalizationRepository:
             MealScheduleItem(
                 id=uuid4(),
                 user_id=user_id,
-                meal_type=meal_type,
                 preferred_time=preferred_time,
                 display_order=display_order,
             )
-            for meal_type, preferred_time, display_order in items
+            for preferred_time, display_order in items
         ]
         self._session.add_all(rows)
         self._session.flush()

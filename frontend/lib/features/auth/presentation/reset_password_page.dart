@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/api_error.dart';
+import '../../../core/widgets/kalonet_auth_scaffold.dart';
+import '../../../core/widgets/kalonet_brand_mark.dart';
 import '../authentication_models.dart';
 import '../authentication_providers.dart';
 
@@ -68,13 +70,15 @@ final class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
   @override
   Widget build(BuildContext context) {
     if (_completed) {
-      return Scaffold(
-        body: Center(
+      return KalonetAuthScaffold(
+        child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                const KalonetBrandMark(size: 72),
+                const SizedBox(height: 16),
                 const Text('Your password was changed.'),
                 const SizedBox(height: 20),
                 ElevatedButton(
@@ -88,56 +92,75 @@ final class _ResetPasswordPageState extends ConsumerState<ResetPasswordPage> {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Choose a new password')),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_errorMessage != null) ...[
-                      Text(_errorMessage!, textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                    ],
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'New password',
+    return KalonetAuthScaffold(
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final contentWidth = (constraints.maxWidth - 48)
+                .clamp(0.0, 420.0)
+                .toDouble();
+            return Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: SizedBox(
+                  width: contentWidth,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const KalonetBrandMark(size: 72),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Choose a new password',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          const SizedBox(height: 20),
+                          if (_errorMessage != null) ...[
+                            Text(_errorMessage!, textAlign: TextAlign.center),
+                            const SizedBox(height: 16),
+                          ],
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: true,
+                            decoration: const InputDecoration(
+                              labelText: 'New password',
+                            ),
+                            validator: (value) =>
+                                value == null || value.length < 15
+                                ? 'Use at least 15 characters.'
+                                : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _confirmationController,
+                            obscureText: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Confirm password',
+                            ),
+                            validator: (value) =>
+                                value != _passwordController.text
+                                ? 'Passwords do not match.'
+                                : null,
+                          ),
+                          const SizedBox(height: 20),
+                          ElevatedButton(
+                            onPressed: _isSubmitting ? null : _submit,
+                            child: _isSubmitting
+                                ? const CircularProgressIndicator()
+                                : const Text('Change password'),
+                          ),
+                        ],
                       ),
-                      validator: (value) => value == null || value.length < 15
-                          ? 'Use at least 15 characters.'
-                          : null,
                     ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _confirmationController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Confirm password',
-                      ),
-                      validator: (value) => value != _passwordController.text
-                          ? 'Passwords do not match.'
-                          : null,
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton(
-                      onPressed: _isSubmitting ? null : _submit,
-                      child: _isSubmitting
-                          ? const CircularProgressIndicator()
-                          : const Text('Change password'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );

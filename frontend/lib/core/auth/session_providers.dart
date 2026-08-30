@@ -4,3 +4,8 @@ import 'session_controller.dart';
 
 final sessionControllerProvider =
     NotifierProvider<SessionController, SessionState>(SessionController.new);
+
+/// Identifies the authenticated account that owns user-scoped providers.
+final sessionUserIdProvider = Provider<String?>((ref) {
+  return ref.watch(sessionControllerProvider.select((state) => state.user?.id));
+});

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -27,7 +27,6 @@ from kalonet_backend.schemas.personalization import (
     MealScheduleInput,
     MealScheduleReplaceRequest,
     MealScheduleResponse,
-    MealType,
     Measurements,
     MeasurementSystem,
     NutritionPreviewResponse,
@@ -54,8 +53,10 @@ from kalonet_backend.schemas.personalization import (
 )
 from kalonet_backend.services import (
     AccountDeletionService,
+    AvatarNotFoundError,
     CalculationInputsUnchangedError,
     CurrentPasswordIncorrectError,
+    InvalidAvatarError,
     InvalidMealScheduleError,
     InvalidPreferenceError,
     InvalidTimeZoneError,
@@ -63,6 +64,7 @@ from kalonet_backend.services import (
     OnboardingAlreadyCompletedError,
     OnboardingInputsIncompleteError,
     OnboardingService,
+    ProfileAvatarService,
     ProfileNotCompletedError,
     ProfileService,
     SettingsService,
@@ -91,6 +93,12 @@ def get_account_deletion_service(
     session: Annotated[Session, Depends(get_db_session)],
 ) -> AccountDeletionService:
     return AccountDeletionService(session)
+
+
+def get_profile_avatar_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> ProfileAvatarService:
+    return ProfileAvatarService(session)
 
 
 def get_settings_service(
@@ -179,7 +187,6 @@ def _onboarding_state(
         dietary_preferences=preferences,
         meal_schedule=[
             MealScheduleInput(
-                meal_type=cast(MealType, item.meal_type),
                 preferred_time=item.preferred_time.strftime("%H:%M"),
                 display_order=item.display_order,
             )
@@ -275,6 +282,7 @@ def _profile_response(
             id=str(user.id),
             email=user.email,
             nickname=profile.nickname,
+            avatar_present=profile.avatar_bytes is not None,
             onboarding_completed=True,
             onboarding_completed_at=user.onboarding_completed_at,
         ),
@@ -292,7 +300,6 @@ def _profile_response(
         dietary_preferences=preferences,
         meal_schedule=[
             MealScheduleInput(
-                meal_type=cast(MealType, item.meal_type),
                 preferred_time=item.preferred_time.strftime("%H:%M"),
                 display_order=item.display_order,
             )
@@ -472,6 +479,73 @@ def get_profile(
         )
 
 
+@router.get("/profile/avatar", response_model=None)
+def get_profile_avatar(
+    request: Request,
+    claims: Annotated[AccessTokenClaims, Depends(get_current_access_token_claims)],
+    service: Annotated[ProfileAvatarService, Depends(get_profile_avatar_service)],
+) -> Response | JSONResponse:
+    try:
+        data, content_type = service.get(claims.user_id)
+    except AvatarNotFoundError:
+        return build_error_response(
+            request=request,
+            status_code=404,
+            code="avatar_not_found",
+            message="No profile avatar is saved.",
+        )
+    return Response(content=data, media_type=content_type)
+
+
+@router.put("/profile/avatar", status_code=204, response_model=None)
+async def replace_profile_avatar(
+    image: Annotated[UploadFile, File(description="JPEG, PNG, or WebP profile image.")],
+    request: Request,
+    claims: Annotated[AccessTokenClaims, Depends(get_current_access_token_claims)],
+    service: Annotated[ProfileAvatarService, Depends(get_profile_avatar_service)],
+) -> Response | JSONResponse:
+    try:
+        # Read one byte beyond the limit so oversized uploads are rejected
+        # without retaining an unbounded request body in application memory.
+        from kalonet_backend.services.profile_avatar import AVATAR_MAX_BYTES
+
+        data = await image.read(AVATAR_MAX_BYTES + 1)
+        service.replace(claims.user_id, data, image.content_type)
+    except InvalidAvatarError:
+        return build_error_response(
+            request=request,
+            status_code=422,
+            code="validation_error",
+            message="Avatar must be a valid JPEG, PNG, or WebP image no larger than 2 MB.",
+        )
+    except AvatarNotFoundError:
+        return build_error_response(
+            request=request,
+            status_code=403,
+            code="onboarding_required",
+            message="Complete onboarding before changing the profile avatar.",
+        )
+    return Response(status_code=204)
+
+
+@router.delete("/profile/avatar", status_code=204, response_model=None)
+def remove_profile_avatar(
+    request: Request,
+    claims: Annotated[AccessTokenClaims, Depends(get_current_access_token_claims)],
+    service: Annotated[ProfileAvatarService, Depends(get_profile_avatar_service)],
+) -> Response | JSONResponse:
+    try:
+        service.remove(claims.user_id)
+    except AvatarNotFoundError:
+        return build_error_response(
+            request=request,
+            status_code=404,
+            code="avatar_not_found",
+            message="No profile avatar is saved.",
+        )
+    return Response(status_code=204)
+
+
 @router.patch("/profile", response_model=ProfileResponse)
 def update_profile_nickname(
     payload: ProfileNicknameUpdate,
@@ -570,7 +644,6 @@ def replace_meal_schedule(
         return MealScheduleResponse(
             items=[
                 MealScheduleInput(
-                    meal_type=cast(MealType, row.meal_type),
                     preferred_time=row.preferred_time.strftime("%H:%M"),
                     display_order=row.display_order,
                 )

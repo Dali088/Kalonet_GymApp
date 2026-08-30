@@ -1,3 +1,9 @@
+// The legacy private card declarations below remain temporarily for API-safe
+// hot-reload compatibility while the active tab uses the Figma showcase cards.
+// ignore_for_file: unused_element, unused_element_parameter
+
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,8 +11,15 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/auth/session_providers.dart';
 import '../../../core/errors/api_error.dart';
+import '../../../core/theme/kalonet_colors.dart';
+import '../../../core/theme/kalonet_tokens.dart';
+import '../../../core/widgets/kalonet_brand_mark.dart';
+import '../../../core/widgets/kalonet_surface.dart';
 import '../../auth/authentication_providers.dart';
+import '../../gamification/gamification_models.dart';
+import '../../gamification/gamification_providers.dart';
 import '../../profile/profile_models.dart';
+import '../../profile/profile_media.dart';
 import '../../profile/profile_providers.dart';
 import '../../onboarding/onboarding_models.dart';
 import '../../tracking/tracking_models.dart';
@@ -45,7 +58,7 @@ final class _DashboardPageState extends ConsumerState<DashboardPage> {
   Future<void> _pickDate() async {
     final selected = ref.read(selectedDateProvider);
     final startDate = ref
-        .read(profileProvider)
+        .read(currentProfileProvider)
         .maybeWhen(
           data: (profile) => _dateOnly(profile.onboardingCompletedAt),
           orElse: () => _dateOnly(DateTime.now()),
@@ -62,7 +75,7 @@ final class _DashboardPageState extends ConsumerState<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     final selectedDate = ref.watch(selectedDateProvider);
-    final profileState = ref.watch(profileProvider);
+    final profileState = ref.watch(currentProfileProvider);
     final startDate = profileState.maybeWhen(
       data: (profile) => _dateOnly(profile.onboardingCompletedAt),
       orElse: () => null,
@@ -74,6 +87,24 @@ final class _DashboardPageState extends ConsumerState<DashboardPage> {
         }
       });
     }
+    final compactHeader = MediaQuery.sizeOf(context).width < 420;
+    final dateAction = compactHeader
+        ? IconButton(
+            tooltip: 'Select date ${_dateLabel(selectedDate)}',
+            onPressed: _pickDate,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 48),
+            icon: Text(
+              _dateLabel(selectedDate),
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: KalonetColors.primary),
+            ),
+          )
+        : TextButton(
+            onPressed: _pickDate,
+            child: Text(_dateLabel(selectedDate)),
+          );
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -93,10 +124,7 @@ final class _DashboardPageState extends ConsumerState<DashboardPage> {
                 : null,
             icon: const Icon(Icons.chevron_left),
           ),
-          TextButton(
-            onPressed: _pickDate,
-            child: Text(_dateLabel(selectedDate)),
-          ),
+          dateAction,
           IconButton(
             tooltip: 'Next day',
             onPressed: selectedDate.isBefore(_dateOnly(DateTime.now()))
@@ -117,14 +145,17 @@ final class _DashboardPageState extends ConsumerState<DashboardPage> {
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _tab,
-        children: const [
-          _OverviewTab(),
-          _MealsTab(),
-          _TrackingTab(),
-          _ProfileTab(),
-        ],
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: KalonetGradients.page),
+        child: IndexedStack(
+          index: _tab,
+          children: const [
+            _OverviewTab(),
+            _MealsTab(),
+            _TrackingTab(),
+            _ProfileTab(),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
@@ -150,76 +181,57 @@ final class _OverviewTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final date = ref.watch(selectedDateProvider);
     final result = ref.watch(dashboardProvider(date));
+    final profile = ref
+        .watch(currentProfileProvider)
+        .maybeWhen(data: (value) => value, orElse: () => null);
+    final gamificationState = ref.watch(gamificationProvider(date));
+    final gamification = gamificationState.value;
+    final meals = ref
+        .watch(mealsProvider(date))
+        .maybeWhen(data: (value) => value, orElse: () => null);
     return result.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const KalonetStatePanel.loading(
+        message: 'Loading your daily snapshot...',
+      ),
       error: (error, _) => _ErrorState(
         message: _friendlyError(error),
         onRetry: () => ref.invalidate(dashboardProvider(date)),
       ),
       data: (dashboard) => RefreshIndicator(
-        onRefresh: () async => ref.invalidate(dashboardProvider(date)),
+        onRefresh: () async {
+          try {
+            await Future.wait<Object?>([
+              ref.refresh(dashboardProvider(date).future),
+              ref.read(achievementsRefreshControllerProvider).refresh(date),
+            ]);
+          } on Object catch (error) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+          }
+        },
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(KalonetSpacing.md),
           children: [
-            Text(
-              'Your daily snapshot',
-              style: Theme.of(context).textTheme.headlineSmall,
+            _DashboardIdentityCard(
+              profile: profile,
+              gamification: gamification,
             ),
-            const SizedBox(height: 16),
-            _NutritionCard(dashboard: dashboard),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _MetricCard(
-                    icon: Icons.restaurant,
-                    label: 'Meals',
-                    value: '${dashboard.mealCount}',
-                    detail: '${dashboard.itemCount} items',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MetricCard(
-                    icon: Icons.water_drop,
-                    label: 'Water',
-                    value: '${dashboard.waterConsumedMl} ml',
-                    detail: dashboard.waterTargetMl == null
-                        ? 'Target not set'
-                        : 'of ${dashboard.waterTargetMl} ml',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _MetricCard(
-                    icon: Icons.directions_walk,
-                    label: 'Steps',
-                    value: '${dashboard.stepCount}',
-                    detail: dashboard.stepTarget == null
-                        ? 'Target not set'
-                        : 'of ${dashboard.stepTarget}',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MetricCard(
-                    icon: Icons.fitness_center,
-                    label: 'Activity',
-                    value: '${dashboard.activityDurationMinutes} min',
-                    detail: '${dashboard.activityCount} sessions',
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Activity calories are shown separately and do not increase your food allowance.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            const SizedBox(height: KalonetSpacing.sm),
+            _DashboardMetricRow(dashboard: dashboard),
+            const SizedBox(height: KalonetSpacing.md),
+            _TodaySummaryCard(dashboard: dashboard),
+            if (gamification != null) ...[
+              const SizedBox(height: KalonetSpacing.lg),
+              _DashboardCollectionPreview(summary: gamification),
+              const SizedBox(height: KalonetSpacing.lg),
+              _DashboardQuestPreview(summary: gamification),
+            ],
+            if (meals != null) ...[
+              const SizedBox(height: KalonetSpacing.lg),
+              _DashboardMealsPreview(meals: meals),
+            ],
           ],
         ),
       ),
@@ -227,41 +239,385 @@ final class _OverviewTab extends ConsumerWidget {
   }
 }
 
-final class _NutritionCard extends StatelessWidget {
-  const _NutritionCard({required this.dashboard});
+final class _DashboardMetricRow extends StatelessWidget {
+  const _DashboardMetricRow({required this.dashboard});
 
   final DailyDashboardModel dashboard;
 
   @override
   Widget build(BuildContext context) {
-    final target = dashboard.target;
-    final consumed = dashboard.consumed;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    final metrics = [
+      KalonetMetricTile(
+        icon: Icons.local_fire_department,
+        label: 'Calories',
+        value: _compactNumber(dashboard.consumed.caloriesKcal),
+        detail: 'of ${dashboard.target.caloriesKcal} kcal',
+        color: KalonetColors.nutrition,
+      ),
+      KalonetMetricTile(
+        icon: Icons.water_drop,
+        label: 'Water',
+        value: '${dashboard.waterConsumedMl} ml',
+        detail: dashboard.waterTargetMl == null
+            ? 'No target'
+            : 'of ${dashboard.waterTargetMl} ml',
+        color: KalonetColors.hydration,
+      ),
+      KalonetMetricTile(
+        icon: Icons.directions_walk,
+        label: 'Steps',
+        value: _compactNumber(dashboard.stepCount),
+        detail: dashboard.stepTarget == null
+            ? 'No target'
+            : 'of ${dashboard.stepTarget}',
+        color: KalonetColors.steps,
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 360 ? 3 : 2;
+        final gap = KalonetSpacing.sm;
+        final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
           children: [
-            Text('Nutrition', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
+            for (final metric in metrics) SizedBox(width: width, child: metric),
+          ],
+        );
+      },
+    );
+  }
+}
+
+final class _DashboardIdentityCard extends StatelessWidget {
+  const _DashboardIdentityCard({this.profile, this.gamification});
+
+  final ProfileModel? profile;
+  final GamificationSummaryModel? gamification;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = profile?.nickname?.trim();
+    final displayName = name == null || name.isEmpty ? 'Kalonet athlete' : name;
+    return KalonetSurface(
+      semanticLabel: 'Profile identity for $displayName',
+      padding: const EdgeInsets.all(KalonetSpacing.md),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const KalonetBrandMark(size: 56, showGlow: false),
+              const SizedBox(width: KalonetSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    if (gamification != null)
+                      Text(
+                        'Rank ${gamification!.rank}  •  ${gamification!.totalXp} XP',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
+              ),
+              if (gamification != null)
+                _RankBadge(
+                  rank: gamification!.rank,
+                  position: gamification!.leaderboardPosition,
+                  size: gamification!.leaderboardSize,
+                ),
+            ],
+          ),
+          if (gamification?.nextRank != null) ...[
+            const SizedBox(height: KalonetSpacing.sm),
+            const Divider(height: 1),
+            const SizedBox(height: KalonetSpacing.sm),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${gamification!.xpToNextRank} XP to rank ${gamification!.nextRank}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+final class _RankBadge extends StatelessWidget {
+  const _RankBadge({
+    required this.rank,
+    required this.position,
+    required this.size,
+  });
+
+  final String rank;
+  final int position;
+  final int size;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = size > 0 ? '#$position / $size' : '#$position';
+    return Semantics(
+      label: 'Rank $rank, leaderboard position $label',
+      child: Column(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: KalonetColors.primary.withValues(alpha: 0.14),
+              border: Border.all(color: KalonetColors.borderPale),
+            ),
+            child: SizedBox(
+              width: 42,
+              height: 42,
+              child: Center(
+                child: Text(
+                  rank,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: KalonetColors.primaryBright,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: KalonetSpacing.xxs),
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
+    );
+  }
+}
+
+final class _TodaySummaryCard extends StatelessWidget {
+  const _TodaySummaryCard({required this.dashboard});
+
+  final DailyDashboardModel dashboard;
+
+  @override
+  Widget build(BuildContext context) {
+    final nutritionRatio = dashboard.target.caloriesKcal == 0
+        ? 0.0
+        : dashboard.consumed.caloriesKcal / dashboard.target.caloriesKcal;
+    return KalonetSurface(
+      semanticLabel: 'Today summary',
+      padding: const EdgeInsets.all(KalonetSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Today', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: KalonetSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryMetric(
+                  icon: Icons.eco_outlined,
+                  color: KalonetColors.primary,
+                  value: '${dashboard.remaining.caloriesKcal}',
+                  label: 'kcal remaining',
+                ),
+              ),
+              Expanded(
+                child: _SummaryMetric(
+                  icon: Icons.favorite_outline,
+                  color: KalonetColors.activity,
+                  value: '${dashboard.activityDurationMinutes} min',
+                  label: 'activity',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: KalonetSpacing.md),
+          KalonetProgressBar(
+            value: nutritionRatio,
+            color: KalonetColors.primary,
+            height: 6,
+            label: 'Calories consumed today',
+          ),
+          const SizedBox(height: KalonetSpacing.xs),
+          Text(
+            'Activity calories stay separate from your food allowance.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+final class _SummaryMetric extends StatelessWidget {
+  const _SummaryMetric({
+    required this.icon,
+    required this.color,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(KalonetRadii.sm),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(KalonetSpacing.xs),
+            child: ExcludeSemantics(child: Icon(icon, color: color, size: 18)),
+          ),
+        ),
+        const SizedBox(width: KalonetSpacing.xs),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(value, style: Theme.of(context).textTheme.titleMedium),
+              Text(label, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+final class _DashboardCollectionPreview extends ConsumerWidget {
+  const _DashboardCollectionPreview({required this.summary});
+
+  final GamificationSummaryModel summary;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final badges = summary.badges.take(3).toList();
+    final date = ref.watch(selectedDateProvider);
+    final refreshState = ref.watch(gamificationProvider(date));
+    final isRefreshing = refreshState.isRefreshing;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        KalonetSectionHeader(
+          title: 'Achievements',
+          subtitle:
+              '${summary.unlockedBadgeCount}/${summary.totalBadgeCount} unlocked',
+          action: IconButton.filledTonal(
+            tooltip: isRefreshing
+                ? 'Refreshing achievements'
+                : 'Refresh achievements',
+            onPressed: isRefreshing
+                ? null
+                : () => _refreshAchievementsFromOverview(context, ref, date),
+            icon: AnimatedSwitcher(
+              duration: KalonetMotion.resolve(context, KalonetMotion.quick),
+              child: isRefreshing
+                  ? const SizedBox(
+                      key: ValueKey('overview-achievements-refreshing'),
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(
+                      Icons.refresh,
+                      key: ValueKey('overview-achievements-refresh'),
+                    ),
+            ),
+          ),
+        ),
+        const SizedBox(height: KalonetSpacing.sm),
+        if (badges.isEmpty)
+          const KalonetEmptyState(
+            icon: Icons.emoji_events_outlined,
+            title: 'Your collection starts here',
+            message: 'Complete a quest to unlock your first badge.',
+          )
+        else
+          SizedBox(
+            height: 134,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: badges.length,
+              separatorBuilder: (_, _) =>
+                  const SizedBox(width: KalonetSpacing.sm),
+              itemBuilder: (context, index) =>
+                  _BadgePreview(badge: badges[index]),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+Future<void> _refreshAchievementsFromOverview(
+  BuildContext context,
+  WidgetRef ref,
+  DateTime date,
+) async {
+  try {
+    await ref.read(achievementsRefreshControllerProvider).refresh(date);
+  } on Object catch (error) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+  }
+}
+
+final class _BadgePreview extends StatelessWidget {
+  const _BadgePreview({required this.badge});
+
+  final BadgeProgressModel badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = badge.unlocked
+        ? KalonetColors.gamification
+        : KalonetColors.textMuted;
+    return SizedBox(
+      width: 142,
+      child: KalonetSurface(
+        padding: const EdgeInsets.all(KalonetSpacing.sm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(KalonetRadii.sm),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(KalonetSpacing.xs),
+                child: ExcludeSemantics(
+                  child: Icon(
+                    badge.unlocked
+                        ? Icons.emoji_events_outlined
+                        : Icons.lock_outline,
+                    color: color,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+            const Spacer(),
             Text(
-              '${consumed.caloriesKcal} / ${target.caloriesKcal} kcal',
-              style: Theme.of(context).textTheme.headlineMedium,
+              badge.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelLarge,
             ),
-            const SizedBox(height: 12),
-            LinearProgressIndicator(
-              value: target.caloriesKcal == 0
-                  ? 0
-                  : (consumed.caloriesKcal / target.caloriesKcal).clamp(0, 1),
-              minHeight: 10,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Remaining ${dashboard.remaining.caloriesKcal} kcal  •  '
-              'Protein ${consumed.proteinG}/${target.proteinG} g  •  '
-              'Carbs ${consumed.carbohydrateG}/${target.carbohydrateG} g  •  '
-              'Fat ${consumed.fatG}/${target.fatG} g',
-            ),
+            Text(badge.category, style: Theme.of(context).textTheme.labelSmall),
           ],
         ),
       ),
@@ -269,38 +625,160 @@ final class _NutritionCard extends StatelessWidget {
   }
 }
 
-final class _MetricCard extends StatelessWidget {
-  const _MetricCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.detail,
-  });
+final class _DashboardQuestPreview extends StatelessWidget {
+  const _DashboardQuestPreview({required this.summary});
 
-  final IconData icon;
-  final String label;
-  final String value;
-  final String detail;
+  final GamificationSummaryModel summary;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon),
-            const SizedBox(height: 8),
-            Text(label, style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 4),
-            Text(value, style: Theme.of(context).textTheme.titleLarge),
-            Text(detail, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
+    final quests = [
+      ...summary.dailyQuests,
+      ...summary.weeklyQuests,
+    ].take(2).toList();
+    if (quests.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const KalonetSectionHeader(title: 'Active quests'),
+        const SizedBox(height: KalonetSpacing.sm),
+        ...quests.map((quest) => _DashboardQuestCard(quest: quest)),
+      ],
+    );
+  }
+}
+
+final class _DashboardQuestCard extends StatelessWidget {
+  const _DashboardQuestCard({required this.quest});
+
+  final QuestProgressModel quest;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = quest.target == 0 ? 0.0 : quest.current / quest.target;
+    return KalonetSurface(
+      margin: const EdgeInsets.only(bottom: KalonetSpacing.xs),
+      padding: const EdgeInsets.all(KalonetSpacing.sm),
+      child: Row(
+        children: [
+          ExcludeSemantics(
+            child: Icon(
+              quest.completed ? Icons.check_circle : Icons.bolt,
+              color: quest.completed
+                  ? KalonetColors.success
+                  : KalonetColors.primary,
+            ),
+          ),
+          const SizedBox(width: KalonetSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  quest.title,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: KalonetSpacing.xxs),
+                Text(
+                  quest.description,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: KalonetSpacing.xs),
+                KalonetProgressBar(
+                  value: progress,
+                  height: 5,
+                  color: quest.completed
+                      ? KalonetColors.success
+                      : KalonetColors.primary,
+                  label: 'Quest progress',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: KalonetSpacing.sm),
+          Text(
+            '+${quest.rewardXp} XP',
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+        ],
       ),
     );
   }
+}
+
+final class _DashboardMealsPreview extends StatelessWidget {
+  const _DashboardMealsPreview({required this.meals});
+
+  final MealsResponseModel meals;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const KalonetSectionHeader(title: 'Today\'s meals'),
+        const SizedBox(height: KalonetSpacing.sm),
+        if (meals.items.isEmpty)
+          const KalonetEmptyState(
+            icon: Icons.restaurant_outlined,
+            title: 'Nothing logged yet',
+            message: 'Add your first meal from the Meals tab.',
+          )
+        else
+          ...meals.items
+              .take(3)
+              .map(
+                (meal) => KalonetSurface(
+                  margin: const EdgeInsets.only(bottom: KalonetSpacing.xs),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: KalonetSpacing.sm,
+                    vertical: KalonetSpacing.xs,
+                  ),
+                  child: Row(
+                    children: [
+                      ExcludeSemantics(
+                        child: Icon(
+                          Icons.restaurant_outlined,
+                          color: KalonetColors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: KalonetSpacing.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              meal.name,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              '${_label(meal.mealType)}  •  ${meal.items.length} items',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '${meal.totals.caloriesKcal.toStringAsFixed(0)} kcal',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+      ],
+    );
+  }
+}
+
+String _compactNumber(num value) {
+  final raw = value.round().toString();
+  final chunks = <String>[];
+  for (var end = raw.length; end > 0; end -= 3) {
+    final start = end - 3 < 0 ? 0 : end - 3;
+    chunks.insert(0, raw.substring(start, end));
+  }
+  return chunks.join(',');
 }
 
 final class _MealsTab extends ConsumerWidget {
@@ -311,7 +789,8 @@ final class _MealsTab extends ConsumerWidget {
     final date = ref.watch(selectedDateProvider);
     final result = ref.watch(mealsProvider(date));
     return result.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () =>
+          const KalonetStatePanel.loading(message: 'Loading your meals...'),
       error: (error, _) => _ErrorState(
         message: _friendlyError(error),
         onRetry: () => ref.invalidate(mealsProvider(date)),
@@ -319,31 +798,38 @@ final class _MealsTab extends ConsumerWidget {
       data: (meals) => RefreshIndicator(
         onRefresh: () async => ref.invalidate(mealsProvider(date)),
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(
+            KalonetSpacing.md,
+            KalonetSpacing.lg,
+            KalonetSpacing.md,
+            KalonetSpacing.xl,
+          ),
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Logged meals',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Add meal',
-                  onPressed: () => _showMealComposer(context, ref, date),
-                  icon: const Icon(Icons.add_circle),
-                ),
-              ],
+            KalonetSectionHeader(
+              title: 'Meals',
+              subtitle:
+                  'Build today\'s record one intentional choice at a time.',
+              action: IconButton.filled(
+                tooltip: 'Add meal',
+                onPressed: () => _showMealComposer(context, ref, date),
+                icon: const Icon(Icons.add),
+              ),
             ),
+            const SizedBox(height: KalonetSpacing.md),
+            _MealsDaySummary(meals: meals),
+            const SizedBox(height: KalonetSpacing.lg),
             if (meals.items.isEmpty)
-              const _EmptyState(
-                icon: Icons.restaurant,
+              KalonetEmptyState(
+                icon: Icons.restaurant_outlined,
+                title: 'A clean slate',
                 message: 'No meals logged for this date yet.',
+                action: FilledButton.icon(
+                  onPressed: () => _showMealComposer(context, ref, date),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Log your first meal'),
+                ),
               ),
             ...meals.items.map((meal) => _MealCard(meal: meal, date: date)),
-            const SizedBox(height: 12),
-            _DailyTotalsCard(totals: meals.dailyTotals),
           ],
         ),
       ),
@@ -366,6 +852,102 @@ final class _MealsTab extends ConsumerWidget {
   }
 }
 
+final class _MealsDaySummary extends StatelessWidget {
+  const _MealsDaySummary({required this.meals});
+
+  final MealsResponseModel meals;
+
+  @override
+  Widget build(BuildContext context) {
+    final totals = meals.dailyTotals;
+    return KalonetSurface(
+      gradient: KalonetGradients.surface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const _ProfileIconTile(
+                icon: Icons.insights_outlined,
+                color: KalonetColors.nutrition,
+              ),
+              const SizedBox(width: KalonetSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Today at a glance',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              Text(
+                '${meals.items.length} ${meals.items.length == 1 ? 'meal' : 'meals'}',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+            ],
+          ),
+          const SizedBox(height: KalonetSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: _MealSummaryStat(
+                  label: 'Calories',
+                  value: '${totals.caloriesKcal.toStringAsFixed(0)} kcal',
+                  color: KalonetColors.nutrition,
+                ),
+              ),
+              Expanded(
+                child: _MealSummaryStat(
+                  label: 'Protein',
+                  value: '${totals.proteinG.toStringAsFixed(0)} g',
+                  color: KalonetColors.primaryBright,
+                ),
+              ),
+              Expanded(
+                child: _MealSummaryStat(
+                  label: 'Carbs',
+                  value: '${totals.carbohydrateG.toStringAsFixed(0)} g',
+                  color: KalonetColors.activity,
+                ),
+              ),
+              Expanded(
+                child: _MealSummaryStat(
+                  label: 'Fat',
+                  value: '${totals.fatG.toStringAsFixed(0)} g',
+                  color: KalonetColors.steps,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+final class _MealSummaryStat extends StatelessWidget {
+  const _MealSummaryStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: Theme.of(context).textTheme.bodySmall),
+      const SizedBox(height: KalonetSpacing.xxs),
+      Text(
+        value,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color),
+      ),
+    ],
+  );
+}
+
 final class _MealCard extends ConsumerWidget {
   const _MealCard({required this.meal, required this.date});
 
@@ -374,11 +956,44 @@ final class _MealCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
+    return KalonetSurface(
+      margin: const EdgeInsets.only(bottom: KalonetSpacing.sm),
+      padding: EdgeInsets.zero,
+      accent: meal.items.isEmpty
+          ? KalonetColors.borderPale
+          : KalonetColors.primary.withValues(alpha: 0.45),
+      semanticLabel:
+          '${meal.name}, ${meal.items.length} items, ${meal.totals.caloriesKcal.toStringAsFixed(0)} calories',
       child: ExpansionTile(
-        title: Text(meal.name),
+        tilePadding: const EdgeInsets.symmetric(horizontal: KalonetSpacing.md),
+        childrenPadding: const EdgeInsets.fromLTRB(
+          KalonetSpacing.md,
+          0,
+          KalonetSpacing.md,
+          KalonetSpacing.xs,
+        ),
+        title: Row(
+          children: [
+            const _ProfileIconTile(
+              icon: Icons.restaurant_outlined,
+              color: KalonetColors.nutrition,
+            ),
+            const SizedBox(width: KalonetSpacing.sm),
+            Expanded(child: Text(meal.name)),
+          ],
+        ),
         subtitle: Text('${_label(meal.mealType)} • ${meal.items.length} items'),
-        trailing: Text('${meal.totals.caloriesKcal.toStringAsFixed(0)} kcal'),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '${meal.totals.caloriesKcal.toStringAsFixed(0)} kcal',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+            const Icon(Icons.expand_more, size: 20),
+          ],
+        ),
         children: [
           ...meal.items.map(
             (item) => ListTile(
@@ -1455,6 +2070,7 @@ final class _ActivityDialogState extends State<_ActivityDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
       title: Text(widget.activity == null ? 'Add activity' : 'Edit activity'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1472,8 +2088,14 @@ final class _ActivityDialogState extends State<_ActivityDialog> {
                       'other',
                     ]
                     .map(
-                      (value) =>
-                          DropdownMenuItem(value: value, child: Text(value)),
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text(
+                          _label(value),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     )
                     .toList(),
             onChanged: (value) => setState(() => _type = value ?? _type),
@@ -1528,44 +2150,88 @@ final class _ProfileTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(profileProvider);
-    final settings = ref.watch(settingsProvider);
+    final profile = ref.watch(currentProfileProvider);
+    final avatar = ref.watch(currentProfileAvatarProvider);
+    final settings = ref.watch(currentSettingsProvider);
+    final date = ref.watch(selectedDateProvider);
+    final gamification = ref
+        .watch(gamificationProvider(date))
+        .maybeWhen(data: (value) => value, orElse: () => null);
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(
+        KalonetSpacing.md,
+        KalonetSpacing.lg,
+        KalonetSpacing.md,
+        KalonetSpacing.xl,
+      ),
       children: [
-        Text(
-          'Profile & settings',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 12),
-        profile.when(
-          loading: () => const LinearProgressIndicator(),
-          error: (error, _) => _ErrorState(
-            message: _friendlyError(error),
-            onRetry: () => ref.invalidate(profileProvider),
+        Center(
+          child: ShaderMask(
+            shaderCallback: (bounds) =>
+                KalonetGradients.primary.createShader(bounds),
+            child: Text(
+              'My profile',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(color: Colors.white),
+            ),
           ),
-          data: (value) => _ProfileCard(profile: value),
         ),
-        const SizedBox(height: 12),
-        settings.when(
-          loading: () => const LinearProgressIndicator(),
+        const SizedBox(height: KalonetSpacing.xs),
+        Text(
+          'Your plan, progress, and account details in one place.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: KalonetSpacing.lg),
+        profile.when(
+          loading: () => const KalonetStatePanel.loading(
+            message: 'Loading your profile...',
+          ),
           error: (error, _) => _ErrorState(
             message: _friendlyError(error),
-            onRetry: () => ref.invalidate(settingsProvider),
+            onRetry: () => _invalidateCurrentProfile(ref),
+          ),
+          data: (value) => _ProfileShowcaseCard(
+            profile: value,
+            avatar: avatar,
+            gamification: gamification,
+          ),
+        ),
+        const SizedBox(height: KalonetSpacing.lg),
+        const KalonetSectionHeader(title: 'Settings'),
+        const SizedBox(height: KalonetSpacing.sm),
+        settings.when(
+          loading: () =>
+              const KalonetStatePanel.loading(message: 'Loading settings...'),
+          error: (error, _) => _ErrorState(
+            message: _friendlyError(error),
+            onRetry: () => _invalidateCurrentSettings(ref),
           ),
           data: (value) => _SettingsCard(settings: value),
         ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: () => _changePassword(context, ref),
-          icon: const Icon(Icons.lock_outline),
-          label: const Text('Change password'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: () => context.push('/gamification'),
-          icon: const Icon(Icons.emoji_events_outlined),
-          label: const Text('View gamification'),
+        const SizedBox(height: KalonetSpacing.sm),
+        KalonetSurface(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              _ProfileActionTile(
+                icon: Icons.lock_outline,
+                color: KalonetColors.activity,
+                title: 'Change password',
+                subtitle: 'Secure your account',
+                onTap: () => _changePassword(context, ref),
+              ),
+              const Divider(height: 1),
+              _ProfileActionTile(
+                icon: Icons.emoji_events_outlined,
+                color: KalonetColors.gamification,
+                title: 'Achievements',
+                subtitle: 'Quests, badges, and leaderboard',
+                onTap: () => context.push('/gamification'),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -1590,9 +2256,15 @@ final class _ProfileTab extends ConsumerWidget {
 }
 
 final class _ProfileCard extends ConsumerWidget {
-  const _ProfileCard({required this.profile});
+  const _ProfileCard({
+    required this.profile,
+    required this.avatar,
+    required this.gamification,
+  });
 
   final ProfileModel profile;
+  final AsyncValue<Uint8List?> avatar;
+  final GamificationSummaryModel? gamification;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1605,10 +2277,17 @@ final class _ProfileCard extends ConsumerWidget {
           children: [
             Text(
               profile.nickname ?? profile.email,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleLarge,
             ),
             if (profile.nickname != null)
-              Text(profile.email, style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                profile.email,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             const SizedBox(height: 8),
             Text(
               '${_label(inputs.goal)} • ${inputs.weightKg} kg • ${inputs.heightCm} cm',
@@ -1620,7 +2299,7 @@ final class _ProfileCard extends ConsumerWidget {
               'Preferences: ${profile.preferences.isEmpty ? 'None' : profile.preferences.join(', ')}',
             ),
             Text(
-              'Meals: ${profile.schedule.map((item) => '${_label(item.mealType)} ${item.preferredTime}').join(', ')}',
+              'Meals: ${profile.schedule.map((item) => 'Meal ${item.displayOrder} ${item.preferredTime}').join(', ')}',
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -1663,7 +2342,7 @@ final class _ProfileCard extends ConsumerWidget {
     final nickname = value.trim().isEmpty ? null : value.trim();
     try {
       await ref.read(profileApiProvider).updateNickname(nickname);
-      ref.invalidate(profileProvider);
+      _invalidateCurrentProfile(ref);
     } on ApiError catch (error) {
       if (context.mounted) _showError(context, error.message);
     }
@@ -1689,7 +2368,7 @@ final class _ProfileCard extends ConsumerWidget {
                 .where((item) => item.isNotEmpty)
                 .toList(),
           );
-      ref.invalidate(profileProvider);
+      _invalidateCurrentProfile(ref);
     } on ApiError catch (error) {
       if (context.mounted) _showError(context, error.message);
     }
@@ -1700,21 +2379,18 @@ final class _ProfileCard extends ConsumerWidget {
       context: context,
       builder: (_) => _TextDialog(
         title: 'Meal schedule',
-        initial: profile.schedule
-            .map((item) => '${item.mealType}=${item.preferredTime}')
-            .join(', '),
-        hint: 'breakfast=08:00, lunch=13:00',
+        initial: profile.schedule.map((item) => item.preferredTime).join(', '),
+        hint: '08:00, 13:00',
       ),
     );
     if (value == null) return;
     final schedule = <MealScheduleInput>[];
     for (final part in value.split(',')) {
-      final pieces = part.trim().split('=');
-      if (pieces.length == 2) {
+      final time = part.trim();
+      if (time.isNotEmpty) {
         schedule.add(
           MealScheduleInput(
-            mealType: pieces[0].trim(),
-            preferredTime: pieces[1].trim(),
+            preferredTime: time,
             displayOrder: schedule.length + 1,
           ),
         );
@@ -1722,7 +2398,7 @@ final class _ProfileCard extends ConsumerWidget {
     }
     try {
       await ref.read(profileApiProvider).replaceSchedule(schedule);
-      ref.invalidate(profileProvider);
+      _invalidateCurrentProfile(ref);
     } on ApiError catch (error) {
       if (context.mounted) _showError(context, error.message);
     }
@@ -1736,11 +2412,608 @@ final class _ProfileCard extends ConsumerWidget {
     if (inputs == null) return;
     try {
       await ref.read(profileApiProvider).recalculate(inputs);
-      ref.invalidate(profileProvider);
+      _invalidateCurrentProfile(ref);
     } on ApiError catch (error) {
       if (context.mounted) _showError(context, error.message);
     }
   }
+}
+
+enum _AvatarChoice { camera, gallery, remove }
+
+final class _ProfileShowcaseCard extends ConsumerWidget {
+  const _ProfileShowcaseCard({
+    required this.profile,
+    required this.avatar,
+    required this.gamification,
+  });
+
+  final ProfileModel profile;
+  final AsyncValue<Uint8List?> avatar;
+  final GamificationSummaryModel? gamification;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final displayName = profile.nickname ?? _emailName(profile.email);
+    final inputs = profile.inputs;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        KalonetSurface(
+          gradient: KalonetGradients.surface,
+          padding: const EdgeInsets.all(KalonetSpacing.md),
+          child: Row(
+            children: [
+              _ProfileAvatar(
+                avatar: avatar,
+                fallback: _initials(displayName),
+                onTap: () => _changeAvatar(context, ref),
+              ),
+              const SizedBox(width: KalonetSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Text(
+                      profile.email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: KalonetSpacing.xs),
+                    const _ProfileStatusChip(),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Edit nickname',
+                onPressed: () => _editNickname(context, ref),
+                icon: const Icon(Icons.edit_outlined),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: KalonetSpacing.md),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = (constraints.maxWidth - KalonetSpacing.sm) / 2;
+            return Wrap(
+              spacing: KalonetSpacing.sm,
+              runSpacing: KalonetSpacing.sm,
+              children: [
+                SizedBox(
+                  width: width,
+                  child: _ProfileMetric(
+                    icon: Icons.flag_outlined,
+                    label: 'Goal',
+                    value: _label(inputs.goal),
+                    color: KalonetColors.activity,
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: _ProfileMetric(
+                    icon: Icons.local_fire_department_outlined,
+                    label: 'Daily target',
+                    value: '${profile.target.dailyCalories} kcal',
+                    color: KalonetColors.nutrition,
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: _ProfileMetric(
+                    icon: Icons.restaurant_outlined,
+                    label: 'Scheduled meals',
+                    value: '${profile.schedule.length} slots',
+                    color: KalonetColors.primaryBright,
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: _ProfileMetric(
+                    icon: Icons.monitor_weight_outlined,
+                    label: 'Current weight',
+                    value: '${_formatMetric(inputs.weightKg)} kg',
+                    color: KalonetColors.steps,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: KalonetSpacing.md),
+        KalonetSurface(
+          child: Row(
+            children: [
+              const KalonetProgressRing(
+                value: 1,
+                label: 'READY',
+                color: KalonetColors.primaryBright,
+                size: 88,
+              ),
+              const SizedBox(width: KalonetSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Your plan is active',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: KalonetSpacing.xxs),
+                    Text(
+                      '${_label(inputs.goal)} · ${_label(inputs.activityLevel)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: KalonetSpacing.sm),
+                    Text(
+                      '${profile.target.proteinG} g protein · ${profile.target.carbohydrateG} g carbs · ${profile.target.fatG} g fat',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (gamification != null) ...[
+          const SizedBox(height: KalonetSpacing.md),
+          KalonetSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const _ProfileIconTile(
+                      icon: Icons.auto_awesome,
+                      color: KalonetColors.gamification,
+                    ),
+                    const SizedBox(width: KalonetSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        'Rewards collection',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    Text(
+                      '${gamification!.unlockedBadgeCount}/${gamification!.totalBadgeCount}',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: KalonetSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ProfileRewardStat(
+                        label: 'Rank',
+                        value: gamification!.rank,
+                      ),
+                    ),
+                    Expanded(
+                      child: _ProfileRewardStat(
+                        label: 'XP',
+                        value: '${gamification!.totalXp}',
+                      ),
+                    ),
+                    Expanded(
+                      child: _ProfileRewardStat(
+                        label: 'Board',
+                        value: '#${gamification!.leaderboardPosition}',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: KalonetSpacing.md),
+        KalonetSurface(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              _ProfileActionTile(
+                icon: Icons.badge_outlined,
+                color: KalonetColors.gamification,
+                title: 'Edit profile name',
+                subtitle: 'Update your private display name',
+                onTap: () => _editNickname(context, ref),
+              ),
+              const Divider(height: 1),
+              _ProfileActionTile(
+                icon: Icons.tune,
+                color: KalonetColors.activity,
+                title: 'Nutrition inputs',
+                subtitle: 'Recalculate your target',
+                onTap: () => _recalculate(context, ref),
+              ),
+              const Divider(height: 1),
+              _ProfileActionTile(
+                icon: Icons.restaurant_menu,
+                color: KalonetColors.nutrition,
+                title: 'Meal schedule',
+                subtitle: '${profile.schedule.length} configured times',
+                onTap: () => _editSchedule(context, ref),
+              ),
+              const Divider(height: 1),
+              _ProfileActionTile(
+                icon: Icons.dining_outlined,
+                color: KalonetColors.primaryBright,
+                title: 'Dietary preferences',
+                subtitle: profile.preferences.isEmpty
+                    ? 'None saved'
+                    : profile.preferences.join(', '),
+                onTap: () => _editPreferences(context, ref),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _changeAvatar(BuildContext context, WidgetRef ref) async {
+    final choice = await showModalBottomSheet<_AvatarChoice>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take a photo'),
+              onTap: () => Navigator.of(context).pop(_AvatarChoice.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.of(context).pop(_AvatarChoice.gallery),
+            ),
+            if (profile.avatarPresent)
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: KalonetColors.error,
+                ),
+                title: const Text('Remove photo'),
+                onTap: () => Navigator.of(context).pop(_AvatarChoice.remove),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted || choice == null) return;
+    if (choice == _AvatarChoice.remove) {
+      if (!await _confirm(context, 'Remove your profile photo?')) return;
+      try {
+        await ref.read(profileApiProvider).removeAvatar();
+        _invalidateCurrentProfile(ref);
+        final userId = ref.read(sessionUserIdProvider);
+        if (userId != null) {
+          await ref.read(profileProvider(userId).future);
+        }
+        _invalidateCurrentAvatar(ref);
+      } on ApiError catch (error) {
+        if (context.mounted) _showError(context, error.message);
+      }
+      return;
+    }
+    try {
+      final source = choice == _AvatarChoice.camera
+          ? ImageSource.camera
+          : ImageSource.gallery;
+      final image = await ref.read(profileImagePickerProvider).pick(source);
+      if (image == null || !context.mounted) return;
+      final contentType = _avatarMimeType(image.name);
+      if (contentType == null) {
+        _showError(context, 'Choose a JPEG, PNG, or WebP image.');
+        return;
+      }
+      await ref
+          .read(profileApiProvider)
+          .uploadAvatar(
+            bytes: await image.readAsBytes(),
+            contentType: contentType,
+          );
+      _invalidateCurrentProfile(ref);
+      final userId = ref.read(sessionUserIdProvider);
+      if (userId != null) {
+        await ref.read(profileProvider(userId).future);
+      }
+      _invalidateCurrentAvatar(ref);
+    } on ApiError catch (error) {
+      if (context.mounted) _showError(context, error.message);
+    } catch (_) {
+      if (context.mounted) {
+        _showError(context, 'The profile photo could not be saved.');
+      }
+    }
+  }
+
+  Future<void> _editNickname(BuildContext context, WidgetRef ref) async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _TextDialog(
+        title: 'Profile nickname',
+        initial: profile.nickname ?? '',
+        hint: 'Optional, up to 32 characters',
+      ),
+    );
+    if (value == null) return;
+    try {
+      await ref
+          .read(profileApiProvider)
+          .updateNickname(value.trim().isEmpty ? null : value.trim());
+      _invalidateCurrentProfile(ref);
+    } on ApiError catch (error) {
+      if (context.mounted) _showError(context, error.message);
+    }
+  }
+
+  Future<void> _editPreferences(BuildContext context, WidgetRef ref) async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (_) => _TextDialog(
+        title: 'Dietary preferences',
+        initial: profile.preferences.join(', '),
+        hint: 'halal, lactose_free',
+      ),
+    );
+    if (value == null) return;
+    try {
+      await ref
+          .read(profileApiProvider)
+          .replacePreferences(
+            value
+                .split(',')
+                .map((item) => item.trim())
+                .where((item) => item.isNotEmpty)
+                .toList(),
+          );
+      _invalidateCurrentProfile(ref);
+    } on ApiError catch (error) {
+      if (context.mounted) _showError(context, error.message);
+    }
+  }
+
+  Future<void> _editSchedule(BuildContext context, WidgetRef ref) async {
+    final value = await showDialog<List<String>>(
+      context: context,
+      builder: (_) => _ScheduleEditorDialog(
+        initial: profile.schedule.map((item) => item.preferredTime).toList(),
+      ),
+    );
+    if (value == null) return;
+    try {
+      await ref.read(profileApiProvider).replaceSchedule([
+        for (var index = 0; index < value.length; index++)
+          MealScheduleInput(
+            preferredTime: value[index],
+            displayOrder: index + 1,
+          ),
+      ]);
+      _invalidateCurrentProfile(ref);
+    } on ApiError catch (error) {
+      if (context.mounted) _showError(context, error.message);
+    }
+  }
+
+  Future<void> _recalculate(BuildContext context, WidgetRef ref) async {
+    final inputs = await showDialog<ProfileCalculationInputsModel>(
+      context: context,
+      builder: (_) => _RecalculateDialog(inputs: profile.inputs),
+    );
+    if (inputs == null) return;
+    try {
+      await ref.read(profileApiProvider).recalculate(inputs);
+      _invalidateCurrentProfile(ref);
+    } on ApiError catch (error) {
+      if (context.mounted) _showError(context, error.message);
+    }
+  }
+}
+
+final class _ProfileAvatarLegacy extends StatelessWidget {
+  const _ProfileAvatarLegacy({
+    required this.avatar,
+    required this.fallback,
+    required this.onTap,
+  });
+
+  final AsyncValue<Uint8List?> avatar;
+  final String fallback;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = avatar.asData?.value;
+    return Semantics(
+      button: true,
+      label: 'Profile photo. Edit photo',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(48),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            CircleAvatar(
+              radius: 42,
+              backgroundColor: KalonetColors.primary.withValues(alpha: 0.18),
+              backgroundImage: bytes == null ? null : MemoryImage(bytes),
+              child: bytes == null
+                  ? Text(
+                      fallback,
+                      style: const TextStyle(
+                        color: KalonetColors.primaryBright,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    )
+                  : null,
+            ),
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: KalonetColors.primary,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: KalonetColors.surfaceElevated,
+                    width: 3,
+                  ),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(
+                    Icons.edit,
+                    size: 14,
+                    color: KalonetColors.background,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+final class _ProfileIconTileLegacy extends StatelessWidget {
+  const _ProfileIconTileLegacy({required this.icon, required this.color});
+
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(KalonetRadii.sm),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(KalonetSpacing.xs),
+        child: Icon(icon, color: color, size: 20),
+      ),
+    );
+  }
+}
+
+final class _ProfileStatusChipLegacy extends StatelessWidget {
+  const _ProfileStatusChipLegacy();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: KalonetColors.primary.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(KalonetRadii.pill),
+        border: Border.all(color: KalonetColors.borderPale),
+      ),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: KalonetSpacing.xs,
+          vertical: 3,
+        ),
+        child: Text(
+          'PLAN ACTIVE',
+          style: TextStyle(
+            color: KalonetColors.primaryBright,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+final class _ProfileMetricLegacy extends StatelessWidget {
+  const _ProfileMetricLegacy({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    return KalonetSurface(
+      semanticLabel: '$label${value == null ? '' : ', $value'}',
+      padding: const EdgeInsets.all(KalonetSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ProfileIconTile(icon: icon, color: color),
+          const SizedBox(height: KalonetSpacing.xs),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: KalonetSpacing.xxs),
+          Text(
+            value ?? '—',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+final class _ProfileRewardStatLegacy extends StatelessWidget {
+  const _ProfileRewardStatLegacy({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: Theme.of(context).textTheme.bodySmall),
+      const SizedBox(height: KalonetSpacing.xxs),
+      Text(value, style: Theme.of(context).textTheme.titleMedium),
+    ],
+  );
+}
+
+final class _ProfileActionTileLegacy extends StatelessWidget {
+  const _ProfileActionTileLegacy({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: _ProfileIconTile(icon: icon, color: color),
+    title: Text(title),
+    subtitle: Text(subtitle),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: onTap,
+  );
 }
 
 final class _SettingsCard extends ConsumerWidget {
@@ -1780,7 +3053,7 @@ final class _SettingsCard extends ConsumerWidget {
       await ref.read(profileApiProvider).updateSettings(<String, dynamic>{
         'theme_preference': value.trim(),
       });
-      ref.invalidate(settingsProvider);
+      _invalidateCurrentSettings(ref);
     } on ApiError catch (error) {
       if (context.mounted) _showError(context, error.message);
     }
@@ -1904,15 +3177,24 @@ final class _RecalculateDialogState extends State<_RecalculateDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
     title: const Text('Recalculate target'),
     content: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         DropdownButtonFormField<String>(
           initialValue: _goal,
+          isExpanded: true,
           items: const ['weight_loss', 'maintain_weight', 'weight_gain']
               .map(
-                (value) => DropdownMenuItem(value: value, child: Text(value)),
+                (value) => DropdownMenuItem(
+                  value: value,
+                  child: Text(
+                    _label(value),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               )
               .toList(),
           onChanged: (value) => setState(() => _goal = value ?? _goal),
@@ -1920,6 +3202,7 @@ final class _RecalculateDialogState extends State<_RecalculateDialog> {
         ),
         DropdownButtonFormField<String>(
           initialValue: _activity,
+          isExpanded: true,
           items:
               const [
                     'sedentary',
@@ -1928,8 +3211,14 @@ final class _RecalculateDialogState extends State<_RecalculateDialog> {
                     'very_active',
                   ]
                   .map(
-                    (value) =>
-                        DropdownMenuItem(value: value, child: Text(value)),
+                    (value) => DropdownMenuItem(
+                      value: value,
+                      child: Text(
+                        _label(value),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   )
                   .toList(),
           onChanged: (value) => setState(() => _activity = value ?? _activity),
@@ -1972,6 +3261,315 @@ final class _RecalculateDialogState extends State<_RecalculateDialog> {
   );
 }
 
+final class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({
+    required this.avatar,
+    required this.fallback,
+    required this.onTap,
+  });
+
+  final AsyncValue<Uint8List?> avatar;
+  final String fallback;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = avatar.asData?.value;
+    return Semantics(
+      button: true,
+      label: 'Profile photo. Edit photo',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(48),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            CircleAvatar(
+              radius: 42,
+              backgroundColor: KalonetColors.primary.withValues(alpha: 0.18),
+              backgroundImage: bytes == null ? null : MemoryImage(bytes),
+              child: bytes == null
+                  ? Text(
+                      fallback,
+                      style: const TextStyle(
+                        color: KalonetColors.primaryBright,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    )
+                  : null,
+            ),
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: KalonetColors.primary,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: KalonetColors.surfaceElevated,
+                    width: 3,
+                  ),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(
+                    Icons.edit,
+                    size: 14,
+                    color: KalonetColors.background,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+final class _ProfileIconTile extends StatelessWidget {
+  const _ProfileIconTile({required this.icon, required this.color});
+
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(KalonetRadii.sm),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(KalonetSpacing.xs),
+      child: Icon(icon, color: color, size: 20),
+    ),
+  );
+}
+
+final class _ProfileStatusChip extends StatelessWidget {
+  const _ProfileStatusChip();
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: KalonetColors.primary.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(KalonetRadii.pill),
+      border: Border.all(color: KalonetColors.borderPale),
+    ),
+    child: const Padding(
+      padding: EdgeInsets.symmetric(horizontal: KalonetSpacing.xs, vertical: 3),
+      child: Text(
+        'PLAN ACTIVE',
+        style: TextStyle(
+          color: KalonetColors.primaryBright,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
+      ),
+    ),
+  );
+}
+
+final class _ProfileMetric extends StatelessWidget {
+  const _ProfileMetric({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) => KalonetSurface(
+    semanticLabel: '$label${value == null ? '' : ', $value'}',
+    padding: const EdgeInsets.all(KalonetSpacing.sm),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ProfileIconTile(icon: icon, color: color),
+        const SizedBox(height: KalonetSpacing.xs),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: KalonetSpacing.xxs),
+        Text(
+          value ?? '—',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+      ],
+    ),
+  );
+}
+
+final class _ProfileRewardStat extends StatelessWidget {
+  const _ProfileRewardStat({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: Theme.of(context).textTheme.bodySmall),
+      const SizedBox(height: KalonetSpacing.xxs),
+      Text(value, style: Theme.of(context).textTheme.titleMedium),
+    ],
+  );
+}
+
+final class _ProfileActionTile extends StatelessWidget {
+  const _ProfileActionTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: _ProfileIconTile(icon: icon, color: color),
+    title: Text(title),
+    subtitle: Text(subtitle),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: onTap,
+  );
+}
+
+final class _ScheduleEditorDialog extends StatefulWidget {
+  const _ScheduleEditorDialog({required this.initial});
+
+  final List<String> initial;
+
+  @override
+  State<_ScheduleEditorDialog> createState() => _ScheduleEditorDialogState();
+}
+
+final class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
+  late final List<TextEditingController> _controllers = [
+    for (final value in widget.initial.isEmpty ? ['12:00'] : widget.initial)
+      TextEditingController(text: value),
+  ];
+
+  @override
+  void dispose() {
+    for (final controller in _controllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Meal schedule'),
+    content: SizedBox(
+      width: 420,
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            for (var index = 0; index < _controllers.length; index++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: KalonetSpacing.sm),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controllers[index],
+                        keyboardType: TextInputType.datetime,
+                        decoration: InputDecoration(
+                          labelText: 'Meal ${index + 1} time',
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: _controllers.length > 1
+                          ? 'Remove meal ${index + 1}'
+                          : 'One meal required',
+                      onPressed: _controllers.length > 1
+                          ? () => setState(() {
+                              _controllers.removeAt(index).dispose();
+                            })
+                          : null,
+                      icon: const Icon(Icons.remove_circle_outline),
+                    ),
+                  ],
+                ),
+              ),
+            OutlinedButton.icon(
+              onPressed: _controllers.length == 15
+                  ? null
+                  : () => setState(() {
+                      _controllers.add(TextEditingController(text: '12:00'));
+                    }),
+              icon: const Icon(Icons.add),
+              label: Text(
+                _controllers.length == 15 ? '15 meals configured' : 'Add meal',
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      ElevatedButton(
+        onPressed: () {
+          final values = _controllers
+              .map((controller) => controller.text.trim())
+              .toList();
+          if (values.any((value) => !_isValidTime(value))) return;
+          Navigator.of(context).pop(values);
+        },
+        child: const Text('Save'),
+      ),
+    ],
+  );
+}
+
+String _emailName(String email) => email.split('@').first;
+
+String _initials(String value) {
+  final parts = value
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return 'K';
+  if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+  return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
+      .toUpperCase();
+}
+
+String _formatMetric(double value) =>
+    value.toStringAsFixed(value == value.roundToDouble() ? 0 : 1);
+
+String? _avatarMimeType(String filename) {
+  final lower = filename.toLowerCase();
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  return null;
+}
+
+bool _isValidTime(String value) =>
+    RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(value);
+
 class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.message, required this.onRetry});
 
@@ -1979,19 +3577,8 @@ class _ErrorState extends StatelessWidget {
   final VoidCallback onRetry;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(message, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
-        ],
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      KalonetStatePanel.error(error: message, onRetry: onRetry);
 }
 
 class _EmptyState extends StatelessWidget {
@@ -2001,16 +3588,23 @@ class _EmptyState extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(32),
-    child: Column(
-      children: [
-        Icon(icon, size: 48),
-        const SizedBox(height: 8),
-        Text(message, textAlign: TextAlign.center),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) =>
+      KalonetEmptyState(icon: icon, title: 'A clean slate', message: message);
+}
+
+void _invalidateCurrentProfile(WidgetRef ref) {
+  final userId = ref.read(sessionUserIdProvider);
+  if (userId != null) ref.invalidate(profileProvider(userId));
+}
+
+void _invalidateCurrentAvatar(WidgetRef ref) {
+  final userId = ref.read(sessionUserIdProvider);
+  if (userId != null) ref.invalidate(profileAvatarProvider(userId));
+}
+
+void _invalidateCurrentSettings(WidgetRef ref) {
+  final userId = ref.read(sessionUserIdProvider);
+  if (userId != null) ref.invalidate(settingsProvider(userId));
 }
 
 String _friendlyError(Object error) => error is ApiError

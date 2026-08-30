@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/theme/kalonet_colors.dart';
+import '../../../core/theme/kalonet_tokens.dart';
+import '../../../core/widgets/kalonet_brand_mark.dart';
+import '../../../core/widgets/kalonet_surface.dart';
 import '../../../core/auth/session_providers.dart';
 import '../../../core/errors/api_error.dart';
 import '../onboarding_models.dart';
@@ -19,9 +23,11 @@ final class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   final _heightController = TextEditingController();
   final _weightController = TextEditingController();
   final _preferencesController = TextEditingController();
-  final _breakfastController = TextEditingController(text: '08:00');
-  final _lunchController = TextEditingController(text: '13:00');
-  final _dinnerController = TextEditingController(text: '19:00');
+  final List<TextEditingController> _mealTimeControllers = [
+    TextEditingController(text: '08:00'),
+    TextEditingController(text: '13:00'),
+    TextEditingController(text: '19:00'),
+  ];
 
   static const _goals = <String>[
     'weight_loss',
@@ -59,9 +65,9 @@ final class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     _heightController.dispose();
     _weightController.dispose();
     _preferencesController.dispose();
-    _breakfastController.dispose();
-    _lunchController.dispose();
-    _dinnerController.dispose();
+    for (final controller in _mealTimeControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -110,19 +116,20 @@ final class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       _weightController.text = _formatNumber(measurements.weightKg);
     }
     _preferencesController.text = state.dietaryPreferences.join(', ');
-    for (final item in state.mealSchedule) {
-      switch (item.mealType) {
-        case 'breakfast':
-          _breakfastController.text = item.preferredTime;
-          break;
-        case 'lunch':
-          _lunchController.text = item.preferredTime;
-          break;
-        case 'dinner':
-          _dinnerController.text = item.preferredTime;
-          break;
-      }
+    if (state.mealSchedule.isNotEmpty) {
+      final schedule = [...state.mealSchedule]
+        ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+      _setMealTimes(schedule.map((item) => item.preferredTime).toList());
     }
+  }
+
+  void _setMealTimes(List<String> values) {
+    for (final controller in _mealTimeControllers) {
+      controller.dispose();
+    }
+    _mealTimeControllers
+      ..clear()
+      ..addAll(values.map((value) => TextEditingController(text: value)));
   }
 
   Future<bool> _saveBasics() async {
@@ -174,21 +181,11 @@ final class _OnboardingPageState extends ConsumerState<OnboardingPage> {
 
   Future<bool> _saveSchedule() async {
     final schedule = [
-      MealScheduleInput(
-        mealType: 'breakfast',
-        preferredTime: _breakfastController.text.trim(),
-        displayOrder: 1,
-      ),
-      MealScheduleInput(
-        mealType: 'lunch',
-        preferredTime: _lunchController.text.trim(),
-        displayOrder: 2,
-      ),
-      MealScheduleInput(
-        mealType: 'dinner',
-        preferredTime: _dinnerController.text.trim(),
-        displayOrder: 3,
-      ),
+      for (var index = 0; index < _mealTimeControllers.length; index++)
+        MealScheduleInput(
+          preferredTime: _mealTimeControllers[index].text.trim(),
+          displayOrder: index + 1,
+        ),
     ];
     if (schedule.any((item) => !_isValidTime(item.preferredTime))) {
       setState(() => _errorMessage = 'Meal times must use HH:MM format.');
@@ -304,24 +301,87 @@ final class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     if (picked != null) setState(() => _dateOfBirth = picked);
   }
 
+  Future<void> _pickMealTime(int index) async {
+    final parts = _mealTimeControllers[index].text.split(':');
+    final parsedHour = int.tryParse(parts.first) ?? 12;
+    final parsedMinute = parts.length == 2 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final initialTime = parts.length == 2
+        ? TimeOfDay(
+            hour: parsedHour < 0
+                ? 0
+                : parsedHour > 23
+                ? 23
+                : parsedHour,
+            minute: parsedMinute < 0
+                ? 0
+                : parsedMinute > 59
+                ? 59
+                : parsedMinute,
+          )
+        : const TimeOfDay(hour: 12, minute: 0);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initialTime,
+      helpText: 'Choose meal time',
+    );
+    if (picked != null && mounted) {
+      _mealTimeControllers[index].text =
+          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+      setState(() {});
+    }
+  }
+
+  void _addMeal() {
+    if (_mealTimeControllers.length >= 15) return;
+    setState(() {
+      _mealTimeControllers.add(TextEditingController(text: '12:00'));
+    });
+  }
+
+  void _removeMeal(int index) {
+    if (_mealTimeControllers.length <= 1) return;
+    final controller = _mealTimeControllers.removeAt(index);
+    controller.dispose();
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: DecoratedBox(
+          decoration: BoxDecoration(gradient: KalonetGradients.page),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                KalonetBrandMark(size: 72),
+                SizedBox(height: KalonetSpacing.md),
+                CircularProgressIndicator(),
+              ],
+            ),
+          ),
+        ),
+      );
     }
     if (_errorMessage != null && _state == null) {
       return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_errorMessage!, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadState,
-                child: const Text('Try again'),
-              ),
-            ],
+        body: DecoratedBox(
+          decoration: const BoxDecoration(gradient: KalonetGradients.page),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const KalonetBrandMark(size: 72),
+                const SizedBox(height: KalonetSpacing.md),
+                Text(_errorMessage!, textAlign: TextAlign.center),
+                const SizedBox(height: KalonetSpacing.md),
+                ElevatedButton(
+                  onPressed: _loadState,
+                  child: const Text('Try again'),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -329,35 +389,47 @@ final class _OnboardingPageState extends ConsumerState<OnboardingPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Set up your plan')),
-      body: SafeArea(
-        child: Stepper(
-          currentStep: _currentStep,
-          onStepTapped: (step) {
-            if (step <= _currentStep) setState(() => _currentStep = step);
-          },
-          controlsBuilder: (_, _) => _buildControls(),
-          steps: [
-            Step(
-              title: const Text('Your basics'),
-              isActive: _currentStep >= 0,
-              content: _buildBasics(),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: KalonetGradients.page),
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (_, _) => Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: Stepper(
+                  currentStep: _currentStep,
+                  onStepTapped: (step) {
+                    if (step <= _currentStep) {
+                      setState(() => _currentStep = step);
+                    }
+                  },
+                  controlsBuilder: (_, _) => _buildControls(),
+                  steps: [
+                    Step(
+                      title: const Text('Your basics'),
+                      isActive: _currentStep >= 0,
+                      content: _buildBasics(),
+                    ),
+                    Step(
+                      title: const Text('Preferences'),
+                      isActive: _currentStep >= 1,
+                      content: _buildPreferences(),
+                    ),
+                    Step(
+                      title: const Text('Meal schedule'),
+                      isActive: _currentStep >= 2,
+                      content: _buildSchedule(),
+                    ),
+                    Step(
+                      title: const Text('Review your target'),
+                      isActive: _currentStep >= 3,
+                      content: _buildReview(),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            Step(
-              title: const Text('Preferences'),
-              isActive: _currentStep >= 1,
-              content: _buildPreferences(),
-            ),
-            Step(
-              title: const Text('Meal schedule'),
-              isActive: _currentStep >= 2,
-              content: _buildSchedule(),
-            ),
-            Step(
-              title: const Text('Review your target'),
-              isActive: _currentStep >= 3,
-              content: _buildReview(),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -521,13 +593,40 @@ final class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   }
 
   Widget _buildSchedule() {
+    final atMaximum = _mealTimeControllers.length == 15;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _timeField('Breakfast', _breakfastController),
-        const SizedBox(height: 16),
-        _timeField('Lunch', _lunchController),
-        const SizedBox(height: 16),
-        _timeField('Dinner', _dinnerController),
+        Text(
+          'Set the times that fit your routine. You can configure 1 to 15 meals.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: KalonetSpacing.md),
+        AnimatedSize(
+          duration: KalonetMotion.resolve(context, KalonetMotion.standard),
+          curve: KalonetMotion.curve,
+          child: Column(
+            children: [
+              for (var index = 0; index < _mealTimeControllers.length; index++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: KalonetSpacing.sm),
+                  child: _MealScheduleRow(
+                    key: ValueKey(_mealTimeControllers[index]),
+                    index: index,
+                    controller: _mealTimeControllers[index],
+                    canRemove: _mealTimeControllers.length > 1,
+                    onPickTime: () => _pickMealTime(index),
+                    onRemove: () => _removeMeal(index),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: atMaximum ? null : _addMeal,
+          icon: const Icon(Icons.add),
+          label: Text(atMaximum ? '15 meals configured' : 'Add meal'),
+        ),
       ],
     );
   }
@@ -572,14 +671,6 @@ final class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     );
   }
 
-  Widget _timeField(String label, TextEditingController controller) {
-    return TextField(
-      controller: controller,
-      keyboardType: TextInputType.datetime,
-      decoration: InputDecoration(labelText: '$label time (HH:MM)'),
-    );
-  }
-
   Widget _errorText() {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
@@ -595,6 +686,83 @@ final class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       return 'Enter a valid number.';
     }
     return null;
+  }
+}
+
+final class _MealScheduleRow extends StatelessWidget {
+  const _MealScheduleRow({
+    required this.index,
+    required this.controller,
+    required this.canRemove,
+    required this.onPickTime,
+    required this.onRemove,
+    super.key,
+  });
+
+  final int index;
+  final TextEditingController controller;
+  final bool canRemove;
+  final VoidCallback onPickTime;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return KalonetSurface(
+      padding: const EdgeInsets.all(KalonetSpacing.sm),
+      accent: KalonetColors.borderPale,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: KalonetColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(KalonetRadii.sm),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    color: KalonetColors.primaryBright,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: KalonetSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Meal ${index + 1}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: canRemove
+                    ? 'Remove meal ${index + 1}'
+                    : 'One meal required',
+                onPressed: canRemove ? onRemove : null,
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+            ],
+          ),
+          const SizedBox(height: KalonetSpacing.xs),
+          TextField(
+            controller: controller,
+            keyboardType: TextInputType.datetime,
+            decoration: InputDecoration(
+              labelText: 'Time (HH:MM)',
+              suffixIcon: IconButton(
+                tooltip: 'Choose time',
+                onPressed: onPickTime,
+                icon: const Icon(Icons.schedule),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

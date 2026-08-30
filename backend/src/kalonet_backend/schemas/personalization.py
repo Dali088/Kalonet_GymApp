@@ -19,14 +19,6 @@ ActivityLevel = Literal[
     "moderately_active",
     "very_active",
 ]
-MealType = Literal[
-    "breakfast",
-    "morning_snack",
-    "lunch",
-    "afternoon_snack",
-    "dinner",
-    "evening_snack",
-]
 OnboardingStatus = Literal["not_started", "in_progress", "completed"]
 NutritionTargetStatus = Literal["not_calculated", "active"]
 
@@ -49,13 +41,12 @@ class Measurements(BaseModel):
 
 
 class MealScheduleInput(BaseModel):
-    """One local preferred meal time and its stable display position."""
+    """One local preferred meal time and its positional display order."""
 
     model_config = ConfigDict(extra="forbid")
 
-    meal_type: MealType
     preferred_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
-    display_order: int = Field(ge=1, le=20)
+    display_order: int = Field(ge=1, le=15)
 
 
 class OnboardingDraftPatch(BaseModel):
@@ -82,6 +73,8 @@ class OnboardingDraftPatch(BaseModel):
             )
         ):
             raise ValueError("At least one onboarding field is required.")
+        if self.meal_schedule is not None and not 1 <= len(self.meal_schedule) <= 15:
+            raise ValueError("Meal schedule must contain between 1 and 15 meals.")
         return self
 
 
@@ -170,6 +163,7 @@ class ProfileUserResponse(BaseModel):
     id: str
     email: str
     nickname: str | None
+    avatar_present: bool
     onboarding_completed: bool
     onboarding_completed_at: datetime
 
@@ -264,7 +258,7 @@ class PreferencesResponse(BaseModel):
 class MealScheduleReplaceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    items: list[MealScheduleInput]
+    items: list[MealScheduleInput] = Field(min_length=1, max_length=15)
 
 
 class MealScheduleResponse(BaseModel):

@@ -36,8 +36,8 @@ def onboarding_payload() -> dict:
         "activity_level": "moderately_active",
         "dietary_preferences": ["halal", "vegetarian"],
         "meal_schedule": [
-            {"meal_type": "breakfast", "preferred_time": "08:00", "display_order": 1},
-            {"meal_type": "dinner", "preferred_time": "20:00", "display_order": 2},
+            {"preferred_time": "08:00", "display_order": 1},
+            {"preferred_time": "20:00", "display_order": 2},
         ],
     }
 
@@ -118,10 +118,10 @@ def test_onboarding_profile_target_and_settings_flow(client) -> None:
     schedule = client.put(
         "/api/v1/users/me/meal-schedule",
         headers=headers,
-        json={"items": [{"meal_type": "lunch", "preferred_time": "13:00", "display_order": 1}]},
+        json={"items": [{"preferred_time": "13:00", "display_order": 1}]},
     )
     assert schedule.status_code == 200
-    assert schedule.json()["items"][0]["meal_type"] == "lunch"
+    assert schedule.json()["items"][0]["display_order"] == 1
 
     settings = client.get("/api/v1/users/me/settings", headers=headers)
     assert settings.status_code == 200

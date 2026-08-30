@@ -1,10 +1,20 @@
+import 'dart:typed_data';
+
 import '../../core/network/api_client.dart';
+import 'package:dio/dio.dart';
+import 'package:http_parser/http_parser.dart';
 import '../onboarding/onboarding_models.dart';
 import 'profile_models.dart';
 
 abstract interface class ProfileGateway {
   Future<ProfileModel> profile();
   Future<ProfileModel> updateNickname(String? nickname);
+  Future<Uint8List> avatarBytes();
+  Future<void> uploadAvatar({
+    required Uint8List bytes,
+    required String contentType,
+  });
+  Future<void> removeAvatar();
   Future<ProfileModel> recalculate(ProfileCalculationInputsModel inputs);
   Future<List<String>> replacePreferences(List<String> preferences);
   Future<List<MealScheduleInput>> replaceSchedule(
@@ -39,6 +49,48 @@ final class ProfileApi implements ProfileGateway {
       retryOnUnauthorized: true,
     );
     return ProfileModel.fromJson(_body(response.data));
+  }
+
+  @override
+  Future<Uint8List> avatarBytes() async {
+    final response = await _client.get<List<int>>(
+      'users/me/profile/avatar',
+      options: Options(responseType: ResponseType.bytes),
+      retryOnUnauthorized: true,
+    );
+    final bytes = response.data;
+    if (bytes == null || bytes.isEmpty) {
+      throw const FormatException('Invalid avatar response.');
+    }
+    return Uint8List.fromList(bytes);
+  }
+
+  @override
+  Future<void> uploadAvatar({
+    required Uint8List bytes,
+    required String contentType,
+  }) async {
+    // FRONTEND-BACKEND: Multipart upload maps to PUT /api/v1/users/me/profile/avatar.
+    await _client.put<Object?>(
+      'users/me/profile/avatar',
+      data: FormData.fromMap({
+        'image': MultipartFile.fromBytes(
+          bytes,
+          filename: 'profile-avatar',
+          contentType: MediaType.parse(contentType),
+        ),
+      }),
+      retryOnUnauthorized: true,
+    );
+  }
+
+  @override
+  Future<void> removeAvatar() async {
+    // FRONTEND-BACKEND: DELETE /api/v1/users/me/profile/avatar clears the saved image.
+    await _client.delete<Object?>(
+      'users/me/profile/avatar',
+      retryOnUnauthorized: true,
+    );
   }
 
   @override

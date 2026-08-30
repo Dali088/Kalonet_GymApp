@@ -67,17 +67,16 @@ def _parse_time(value: str) -> time:
     return time(hour=hour, minute=minute)
 
 
-def _schedule_values(items: list[MealScheduleInput]) -> list[tuple[str, time, int]]:
-    if len(items) > 20:
+def _schedule_values(items: list[MealScheduleInput]) -> list[tuple[time, int]]:
+    if not 1 <= len(items) <= 15:
         raise InvalidMealScheduleError
-    meal_types = [item.meal_type for item in items]
     display_orders = [item.display_order for item in items]
-    if len(set(meal_types)) != len(meal_types) or len(set(display_orders)) != len(display_orders):
+    if len(set(display_orders)) != len(display_orders) or set(display_orders) != set(
+        range(1, len(items) + 1)
+    ):
         raise InvalidMealScheduleError
     try:
-        return [
-            (item.meal_type, _parse_time(item.preferred_time), item.display_order) for item in items
-        ]
+        return [(_parse_time(item.preferred_time), item.display_order) for item in items]
     except (TypeError, ValueError) as error:
         raise InvalidMealScheduleError from error
 
